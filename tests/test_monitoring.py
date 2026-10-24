@@ -69,3 +69,9 @@ def test_dashboard_is_provisioned(grafana):
     url, auth = grafana
     found = requests.get(f"{url}/api/search", params={"query": "Infra Lab overview"}, auth=auth, timeout=10).json()
     assert [d["uid"] for d in found] == ["iol-overview"]
+
+
+def test_root_disk_is_measured(prometheus, nodes):
+    q = 'node_filesystem_avail_bytes{mountpoint="/"}'
+    result = requests.get(f"{prometheus}/api/v1/query", params={"query": q}, timeout=10).json()["data"]["result"]
+    assert {r["metric"]["instance"] for r in result} == set(nodes)

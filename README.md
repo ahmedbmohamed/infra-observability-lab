@@ -49,9 +49,25 @@ flowchart LR
 | 1. Provision | Terraform | Builds the server image and creates the network, `web1`, `web2`, Prometheus and Grafana. It generates the Prometheus scrape targets and the Ansible inventory from the same list of servers, so `web_count = 3` adds a server everywhere. |
 | 2. Configure | Ansible | Roles `common` (packages, SSH hardening), `pki` (internal CA and one certificate per server), `node_exporter`, `nginx` (TLS site, security headers, status page, exporter). |
 | 3. Check | Ansible | A second run must report `changed=0` (idempotence). |
-| 4. Test | pytest | 17 tests on HTTPS, TLS versions, headers, SSH rules, Prometheus targets and rules, Grafana. |
+| 4. Test | pytest | 18 tests on HTTPS, TLS versions, headers, SSH rules, Prometheus targets and rules, Grafana. |
 | 5. Alert drill | Python | Stops nginx on `web1`, waits for `NginxDown` to fire, restarts nginx, waits for the alert to clear. |
 | 6. Clean up | Terraform | `terraform destroy`, always, even when a step fails. |
+
+## Screenshots
+
+Taken by the CI during the alert drill ([`refresh-screenshots`](.github/workflows/screenshots.yml) workflow).
+
+**nginx stopped on web1:** the dashboard shows web1 DOWN and one firing alert.
+
+![Grafana during the outage](docs/screenshots/grafana-dashboard-outage.png)
+
+**Prometheus:** `NginxDown` firing for web1.
+
+![Prometheus alert firing](docs/screenshots/prometheus-alert-firing.png)
+
+**After the repair:** web1 is back up and the alert has cleared.
+
+![Grafana after the repair](docs/screenshots/grafana-dashboard.png)
 
 ## What the servers get
 
@@ -70,6 +86,7 @@ flowchart LR
 
 **Monitoring**
 - `node_exporter` (CPU, memory, disk, network) and `nginx-prometheus-exporter` (requests, connections, nginx up or down).
+- The filesystem collector is told to keep `overlay` filesystems, because `/` is one inside a container.
 - Both binaries are downloaded from their GitHub releases with a pinned version and a SHA-256 check. They run as their own system users, not root.
 
 ## Alerts

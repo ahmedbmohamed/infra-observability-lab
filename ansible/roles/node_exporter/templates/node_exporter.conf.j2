@@ -1,6 +1,6 @@
 ; {{ ansible_managed }}
 [program:node_exporter]
-command=/usr/local/bin/node_exporter --web.listen-address={{ node_exporter_listen }}
+command=/usr/local/bin/node_exporter --web.listen-address={{ node_exporter_listen }} --collector.filesystem.fs-types-exclude='{{ node_exporter_fs_types_exclude }}'
 user=node_exporter
 autorestart=true
 stdout_logfile=/var/log/supervisor/node_exporter.log

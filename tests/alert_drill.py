@@ -39,19 +39,24 @@ def screenshots(out: Path, grafana: str, password: str, prometheus: str, shots: 
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 1600, "height": 1000})
+        logged_in = False
         for shot in shots:
             if shot == "alerts":
                 page.goto(f"{prometheus}/alerts?state=firing")
-                page.wait_for_timeout(3000)
+                page.wait_for_timeout(2000)
+                page.get_by_text("Show annotations").click()
+                page.get_by_text("NginxDown").first.click()
+                page.wait_for_timeout(1000)
                 page.screenshot(path=out / "prometheus-alert-firing.png", full_page=True)
                 continue
-            if "/login" in page.url or page.url == "about:blank":
+            if not logged_in:
+                logged_in = True
                 page.goto(f"{grafana}/login")
                 page.fill('input[name="user"]', "admin")
                 page.fill('input[name="password"]', password)
                 page.click('button[type="submit"]')
                 page.wait_for_load_state("networkidle")
-            page.goto(f"{grafana}/d/iol-overview?orgId=1&from=now-10m&to=now&kiosk")
+            page.goto(f"{grafana}/d/iol-overview?orgId=1&from=now-5m&to=now&kiosk")
             page.wait_for_timeout(8000)
             page.screenshot(path=out / f"{shot}.png", full_page=True)
         browser.close()

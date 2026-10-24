@@ -5,3 +5,7 @@ node_exporter_sha256: 6809dd0b3ec45fd6e992c19071d6b5253aed3ead7bf0686885a51d85c6
 node_exporter_release: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}"
 node_exporter_url: "{{ node_exporter_release }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
 node_exporter_listen: ":9100"
+# Same as the node_exporter default list, without "overlay": inside a container "/" is an overlay
+# filesystem, and without it there is no disk metric (and LowDiskSpace could never fire).
+node_exporter_fs_types_exclude: >-
+  ^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$
