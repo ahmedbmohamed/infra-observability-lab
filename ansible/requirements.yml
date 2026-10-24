@@ -1,0 +1,4 @@
+---
+collections:
+  - name: community.crypto
+    version: ">=2.20.0,<3.0.0"

@@ -1,0 +1,25 @@
+---
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Harden the SSH server
+  ansible.builtin.template:
+    src: sshd-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload sshd
+
+- name: Make sure the supervisor program folder exists
+  ansible.builtin.file:
+    path: /etc/supervisor/conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"

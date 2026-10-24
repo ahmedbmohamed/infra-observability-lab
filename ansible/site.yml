@@ -1,0 +1,38 @@
+---
+- name: Configure the web servers
+  hosts: web
+  become: true
+  # Nothing below uses facts, and skipping them makes the run faster.
+  gather_facts: false
+
+  pre_tasks:
+    - name: Wait for SSH on freshly created servers
+      ansible.builtin.wait_for_connection:
+        timeout: 90
+
+  roles:
+    - common
+    - pki
+    - node_exporter
+    - nginx
+
+  post_tasks:
+    - name: Wait until every service is running
+      ansible.builtin.command: supervisorctl status  # noqa: command-instead-of-module
+      register: services
+      changed_when: false
+      failed_when: false
+      retries: 10
+      delay: 2
+      until: >-
+        services.stdout_lines | select('search', 'RUNNING') | list | length == 4
+
+    - name: Check that sshd, nginx and both exporters are running
+      ansible.builtin.assert:
+        that:
+          - services.stdout is search('sshd\s+RUNNING')
+          - services.stdout is search('nginx\s+RUNNING')
+          - services.stdout is search('node_exporter\s+RUNNING')
+          - services.stdout is search('nginx_exporter\s+RUNNING')
+        fail_msg: "{{ services.stdout_lines }}"
+        quiet: true

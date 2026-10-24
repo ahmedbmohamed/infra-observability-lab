@@ -1,0 +1,15 @@
+# Keys, CA and certificates are created on each machine and never committed.
+.secrets/
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/.terraform.tfstate.lock.info
+terraform/crash.log
+
+# Written by Terraform
+ansible/inventory/hosts.yml
+
+__pycache__/
+.pytest_cache/

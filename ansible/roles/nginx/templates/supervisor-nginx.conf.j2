@@ -1,0 +1,7 @@
+; {{ ansible_managed }}
+[program:nginx]
+command=/usr/sbin/nginx -g "daemon off;"
+autorestart=true
+stopsignal=QUIT
+stdout_logfile=/var/log/supervisor/nginx.log
+redirect_stderr=true

@@ -1,0 +1,4 @@
+---
+- name: Restart node_exporter
+  ansible.builtin.command: supervisorctl restart node_exporter  # noqa: command-instead-of-module
+  changed_when: true

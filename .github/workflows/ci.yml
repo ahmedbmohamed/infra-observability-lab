@@ -1,0 +1,98 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the tools
+        run: |
+          pip install ansible-core==2.17.* ansible-lint==24.* yamllint==1.35.*
+          ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Lint Terraform, YAML, Ansible and alert rules, and unit-test the alerts
+        run: make lint
+
+  deploy-and-test:
+    needs: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the tools
+        run: |
+          pip install ansible-core==2.17.* cryptography -r tests/requirements.txt playwright==1.48.*
+          ansible-galaxy collection install -r ansible/requirements.yml
+          python -m playwright install --with-deps chromium
+
+      - name: Terraform - create the lab
+        run: make up
+
+      - name: Ansible - configure the servers
+        run: make configure
+
+      - name: Ansible - second run must change nothing
+        run: make idempotence
+
+      - name: Tests - HTTPS, SSH, Prometheus, Grafana
+        run: make test
+
+      - name: Alert drill - stop nginx on web1
+        run: python tests/alert_drill.py --screenshots screenshots
+
+      - name: Show the services when something failed
+        if: failure()
+        run: |
+          docker ps -a
+          for c in iol-web1 iol-web2; do
+            echo "::group::$c"
+            docker exec "$c" supervisorctl status || true
+            docker exec "$c" sh -c 'tail -n 50 /var/log/supervisor/*.log' || true
+            echo "::endgroup::"
+          done
+          docker logs iol-prometheus 2>&1 | tail -n 50
+
+      - name: Keep the screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab-results
+          path: |
+            screenshots/
+            .secrets/second-run.log
+          if-no-files-found: ignore
+
+      - name: Terraform - destroy the lab
+        if: always()
+        run: make down

@@ -1,0 +1,60 @@
+groups:
+  - name: availability
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} on {{ $labels.instance }} cannot be scraped"
+          description: "Prometheus has not reached {{ $labels.instance }} ({{ $labels.job }}) for 1 minute."
+
+      - alert: NginxDown
+        expr: nginx_up == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "nginx is down on {{ $labels.instance }}"
+          description: "The exporter on {{ $labels.instance }} cannot reach the nginx status page."
+
+  - name: resources
+    rules:
+      - alert: HighCpuUsage
+        expr: 100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[2m]))) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU above 85% on {{ $labels.instance }}"
+          description: "CPU usage on {{ $labels.instance }} has stayed above 85% for 5 minutes."
+
+      - alert: LowMemory
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Less than 10% memory available on {{ $labels.instance }}"
+          description: "Available memory on {{ $labels.instance }} has stayed under 10% for 5 minutes."
+
+      - alert: LowDiskSpace
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Less than 10% disk space left on {{ $labels.instance }}"
+          description: "The root filesystem of {{ $labels.instance }} has less than 10% free space."
+
+  - name: traffic
+    rules:
+      - alert: NginxNoTraffic
+        expr: rate(nginx_http_requests_total[5m]) == 0 and nginx_up == 1
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "No requests on {{ $labels.instance }} for 15 minutes"
+          description: "nginx is up on {{ $labels.instance }} but received no requests (load balancer or DNS problem?)."

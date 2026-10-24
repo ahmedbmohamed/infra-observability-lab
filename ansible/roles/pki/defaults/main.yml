@@ -1,0 +1,7 @@
+---
+# The CA lives on the control node only. Its private key never goes to the servers.
+pki_dir: "{{ playbook_dir }}/../.secrets/pki"
+pki_ca_common_name: Infra Lab Internal CA
+pki_ca_days: 3650
+pki_cert_days: 397
+pki_remote_dir: /etc/ssl/lab

@@ -1,0 +1,65 @@
+# Unit tests for the alert rules: promtool test rules tests/alerts_test.yml
+rule_files:
+  - ../monitoring/alerts.yml
+
+evaluation_interval: 10s
+
+tests:
+  - name: NginxDown fires after 30 seconds, not before
+    interval: 10s
+    input_series:
+      - series: 'nginx_up{job="nginx", instance="web1"}'
+        values: "1 1 0x10"
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: NginxDown
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: NginxDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: nginx
+              instance: web1
+            exp_annotations:
+              summary: "nginx is down on web1"
+              description: "The exporter on web1 cannot reach the nginx status page."
+
+  - name: TargetDown waits one minute
+    interval: 10s
+    input_series:
+      - series: 'up{job="node", instance="web2"}'
+        values: "1 0x12"
+    alert_rule_test:
+      - eval_time: 50s
+        alertname: TargetDown
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: node
+              instance: web2
+            exp_annotations:
+              summary: "node on web2 cannot be scraped"
+              description: "Prometheus has not reached web2 (node) for 1 minute."
+
+  - name: HighCpuUsage on a busy server only
+    interval: 1m
+    input_series:
+      # Idle time grows by 6 s per minute on web1 (90% busy) and by 54 s on web2 (10% busy).
+      - series: 'node_cpu_seconds_total{mode="idle", cpu="0", instance="web1"}'
+        values: "0+6x20"
+      - series: 'node_cpu_seconds_total{mode="idle", cpu="0", instance="web2"}'
+        values: "0+54x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: HighCpuUsage
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: web1
+            exp_annotations:
+              summary: "CPU above 85% on web1"
+              description: "CPU usage on web1 has stayed above 85% for 5 minutes."

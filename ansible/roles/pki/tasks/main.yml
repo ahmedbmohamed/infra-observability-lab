@@ -1,0 +1,104 @@
+---
+- name: Create the internal CA on the control node
+  run_once: true
+  delegate_to: localhost
+  become: false
+  block:
+    - name: Create the PKI folder
+      ansible.builtin.file:
+        path: "{{ pki_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Create the CA private key
+      community.crypto.openssl_privatekey:
+        path: "{{ pki_dir }}/ca.key"
+        type: ECC
+        curve: secp384r1
+        mode: "0600"
+
+    - name: Create the CA signing request
+      community.crypto.openssl_csr:
+        path: "{{ pki_dir }}/ca.csr"
+        privatekey_path: "{{ pki_dir }}/ca.key"
+        common_name: "{{ pki_ca_common_name }}"
+        use_common_name_for_san: false
+        basic_constraints: ["CA:TRUE", "pathlen:0"]
+        basic_constraints_critical: true
+        key_usage: [keyCertSign, cRLSign]
+        key_usage_critical: true
+        mode: "0644"
+
+    - name: Self-sign the CA certificate
+      community.crypto.x509_certificate:
+        path: "{{ pki_dir }}/ca.crt"
+        csr_path: "{{ pki_dir }}/ca.csr"
+        privatekey_path: "{{ pki_dir }}/ca.key"
+        provider: selfsigned
+        selfsigned_not_after: "+{{ pki_ca_days }}d"
+        mode: "0644"
+
+- name: Issue a server certificate for each host
+  delegate_to: localhost
+  become: false
+  block:
+    - name: Create the server private key
+      community.crypto.openssl_privatekey:
+        path: "{{ pki_dir }}/{{ inventory_hostname }}.key"
+        type: ECC
+        curve: secp256r1
+        mode: "0600"
+
+    - name: Create the server signing request
+      community.crypto.openssl_csr:
+        path: "{{ pki_dir }}/{{ inventory_hostname }}.csr"
+        privatekey_path: "{{ pki_dir }}/{{ inventory_hostname }}.key"
+        common_name: "{{ inventory_hostname }}"
+        subject_alt_name:
+          - "DNS:{{ inventory_hostname }}"
+          - DNS:localhost
+          - IP:127.0.0.1
+          - "IP:{{ lab_ip }}"
+        extended_key_usage: [serverAuth]
+        key_usage: [digitalSignature]
+        key_usage_critical: true
+        mode: "0644"
+
+    - name: Sign the server certificate with the CA
+      community.crypto.x509_certificate:
+        path: "{{ pki_dir }}/{{ inventory_hostname }}.crt"
+        csr_path: "{{ pki_dir }}/{{ inventory_hostname }}.csr"
+        provider: ownca
+        ownca_path: "{{ pki_dir }}/ca.crt"
+        ownca_privatekey_path: "{{ pki_dir }}/ca.key"
+        ownca_not_after: "+{{ pki_cert_days }}d"
+        mode: "0644"
+
+- name: Create the certificate folder on the server
+  ansible.builtin.file:
+    path: "{{ pki_remote_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Copy the certificate and the CA to the server
+  ansible.builtin.copy:
+    src: "{{ pki_dir }}/{{ item }}"
+    dest: "{{ pki_remote_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - "{{ inventory_hostname }}.crt"
+    - ca.crt
+  notify: Reload nginx
+
+- name: Copy the private key to the server
+  ansible.builtin.copy:
+    src: "{{ pki_dir }}/{{ inventory_hostname }}.key"
+    dest: "{{ pki_remote_dir }}/{{ inventory_hostname }}.key"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Reload nginx

@@ -1,0 +1,10 @@
+---
+common_packages:
+  - ca-certificates
+  - curl
+  - tar
+  - gzip
+  - openssl
+
+# Written to /etc/ssh/sshd_config.d/10-hardening.conf
+common_ssh_allow_users: [ops]

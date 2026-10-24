@@ -1,0 +1,7 @@
+; {{ ansible_managed }}
+[program:node_exporter]
+command=/usr/local/bin/node_exporter --web.listen-address={{ node_exporter_listen }}
+user=node_exporter
+autorestart=true
+stdout_logfile=/var/log/supervisor/node_exporter.log
+redirect_stderr=true

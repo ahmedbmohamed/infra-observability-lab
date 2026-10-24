@@ -1,0 +1,50 @@
+# {{ ansible_managed }}
+
+# Plain HTTP only redirects to HTTPS.
+server {
+    listen 80 default_server;
+    server_name _;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2 default_server;
+    server_name {{ inventory_hostname }} localhost;
+
+    ssl_certificate     {{ pki_remote_dir }}/{{ inventory_hostname }}.crt;
+    ssl_certificate_key {{ pki_remote_dir }}/{{ inventory_hostname }}.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Content-Security-Policy "default-src 'self'" always;
+
+    root {{ nginx_site_root }};
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+}
+
+# Status page for the Prometheus exporter, reachable from the server itself only.
+server {
+    listen 127.0.0.1:{{ nginx_status_port }};
+
+    location = /nginx_status {
+        stub_status;
+        allow 127.0.0.1;
+        deny all;
+    }
+}

@@ -1,0 +1,40 @@
+---
+- name: Create the node_exporter system user
+  ansible.builtin.user:
+    name: node_exporter
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Download node_exporter (checksum verified)
+  ansible.builtin.get_url:
+    url: "{{ node_exporter_url }}"
+    dest: "/opt/node_exporter-{{ node_exporter_version }}.tar.gz"
+    checksum: "sha256:{{ node_exporter_sha256 }}"
+    mode: "0644"
+
+- name: Unpack node_exporter
+  ansible.builtin.unarchive:
+    src: "/opt/node_exporter-{{ node_exporter_version }}.tar.gz"
+    dest: /opt
+    remote_src: true
+    creates: "/opt/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+
+- name: Install the node_exporter binary
+  ansible.builtin.copy:
+    src: "/opt/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+    dest: /usr/local/bin/node_exporter
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart node_exporter
+
+- name: Run node_exporter under supervisor
+  ansible.builtin.template:
+    src: node_exporter.conf.j2
+    dest: /etc/supervisor/conf.d/node_exporter.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Update supervisor

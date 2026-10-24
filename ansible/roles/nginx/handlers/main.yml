@@ -1,0 +1,9 @@
+---
+# nginx runs in the foreground under supervisor: SIGHUP reloads it without dropping connections.
+- name: Reload nginx
+  ansible.builtin.command: supervisorctl signal HUP nginx  # noqa: command-instead-of-module
+  changed_when: true
+
+- name: Restart nginx_exporter
+  ansible.builtin.command: supervisorctl restart nginx_exporter  # noqa: command-instead-of-module
+  changed_when: true

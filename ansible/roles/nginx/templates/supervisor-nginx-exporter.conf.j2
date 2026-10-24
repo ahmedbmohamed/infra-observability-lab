@@ -1,0 +1,7 @@
+; {{ ansible_managed }}
+[program:nginx_exporter]
+command=/usr/local/bin/nginx-prometheus-exporter --nginx.scrape-uri=http://127.0.0.1:{{ nginx_status_port }}/nginx_status --web.listen-address={{ nginx_exporter_listen }}
+user=nginx_exporter
+autorestart=true
+stdout_logfile=/var/log/supervisor/nginx_exporter.log
+redirect_stderr=true

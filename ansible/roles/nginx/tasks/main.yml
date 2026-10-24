@@ -1,0 +1,70 @@
+---
+- name: Install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+
+- name: Remove the default site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: Apply global hardening settings
+  ansible.builtin.template:
+    src: hardening.conf.j2
+    dest: /etc/nginx/conf.d/hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Configure the HTTPS site
+  ansible.builtin.template:
+    src: lab-site.conf.j2
+    dest: /etc/nginx/sites-available/lab.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable the HTTPS site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/lab.conf
+    dest: /etc/nginx/sites-enabled/lab.conf
+    state: link
+  notify: Reload nginx
+
+- name: Create the site folder
+  ansible.builtin.file:
+    path: "{{ nginx_site_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Publish the home page
+  ansible.builtin.template:
+    src: index.html.j2
+    dest: "{{ nginx_site_root }}/index.html"
+    owner: root
+    group: root
+    mode: "0644"
+
+# Stops the play here if a template produced an invalid configuration,
+# before the reload handler can break a running server.
+- name: Check the nginx configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Run nginx under supervisor
+  ansible.builtin.template:
+    src: supervisor-nginx.conf.j2
+    dest: /etc/supervisor/conf.d/nginx.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Update supervisor
+
+- name: Install the nginx Prometheus exporter
+  ansible.builtin.import_tasks: exporter.yml

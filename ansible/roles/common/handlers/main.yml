@@ -1,0 +1,11 @@
+---
+# Services run under supervisord (the containers have no systemd).
+# "supervisorctl update" loads new programs and restarts the ones whose configuration changed.
+- name: Update supervisor
+  ansible.builtin.command: supervisorctl update  # noqa: command-instead-of-module
+  changed_when: true
+
+# SIGHUP makes sshd reload its configuration without dropping open sessions.
+- name: Reload sshd
+  ansible.builtin.command: supervisorctl signal HUP sshd  # noqa: command-instead-of-module
+  changed_when: true
