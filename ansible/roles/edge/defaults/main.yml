@@ -8,8 +8,11 @@ edge_crs_dir: "/opt/coreruleset-{{ edge_crs_version }}"
 
 # "On" blocks, "DetectionOnly" only logs. A new site starts in DetectionOnly, gets tuned, then moves to On.
 edge_waf_mode: "On"
-# CRS paranoia level: 1 = few false positives, 4 = strict. Level 2 here, after tuning (see docs/edge-security.md).
-edge_paranoia_level: 2
+# CRS paranoia levels: 1 = few false positives, 4 = strict. Requests are blocked by the level 1 rules;
+# the level 2 rules also run but only log ("detection"), to collect data before raising the level.
+# Chosen with GoTestWAF measurements at levels 1 to 4 (docs/edge-security.md, section 3).
+edge_paranoia_level: 1
+edge_detection_paranoia_level: 2
 # A request is blocked when the sum of its rule scores reaches this value (critical rule = 5).
 edge_inbound_threshold: 5
 edge_outbound_threshold: 4

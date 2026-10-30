@@ -6,7 +6,7 @@ on:
     inputs:
       levels:
         description: "Paranoia levels to compare (JSON list)"
-        default: "[1, 2, 3]"
+        default: "[1, 2, 3, 4]"
 
 permissions:
   contents: read

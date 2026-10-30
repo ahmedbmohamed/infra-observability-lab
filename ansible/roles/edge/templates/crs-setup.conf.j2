@@ -7,7 +7,8 @@ SecDefaultAction "phase:2,log,auditlog,pass"
 
 SecAction \
     "id:900000,phase:1,pass,t:none,nolog,tag:'OWASP_CRS',ver:'OWASP_CRS/{{ edge_crs_version }}',\
-    setvar:tx.blocking_paranoia_level={{ edge_paranoia_level }}"
+    setvar:tx.blocking_paranoia_level={{ edge_paranoia_level }},\
+    setvar:tx.detection_paranoia_level={{ [edge_paranoia_level, edge_detection_paranoia_level] | max }}"
 
 SecAction \
     "id:900110,phase:1,pass,t:none,nolog,tag:'OWASP_CRS',ver:'OWASP_CRS/{{ edge_crs_version }}',\
