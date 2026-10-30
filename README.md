@@ -59,7 +59,7 @@ flowchart LR
 | 1. Provision | Terraform | Builds the server image and creates the network, `edge`, `web1`, `web2`, Prometheus and Grafana. It generates the Prometheus scrape targets, the probe targets and the Ansible inventory from the same list of servers, so `web_count = 3` adds a server everywhere (also behind the edge). |
 | 2. Configure | Ansible | Roles `common` (packages, SSH hardening), `pki` (internal CA, server certificates, the edge client certificate), `node_exporter`, `nginx` (TLS site, security headers, status page, exporter), and on the edge `blackbox_exporter` and `edge` (ModSecurity, CRS, cache, rate limit, edge_exporter). |
 | 3. Check | Ansible | A second run must report `changed=0` (idempotence). |
-| 4. Test | pytest | 67 tests: 33 WAF cases (attacks blocked, legitimate requests allowed), origin protection, cache, rate limit, TLS policy, probes, HTTPS, SSH rules, Prometheus, Grafana. |
+| 4. Test | pytest | 70 tests: 36 WAF cases (attacks blocked, legitimate requests allowed), origin protection, cache, rate limit, TLS policy, probes, HTTPS, SSH rules, Prometheus, Grafana. |
 | 5. Outage drill | Python | Stops nginx on `web1`: `NginxDown` must fire and the edge must keep serving from `web2`. Then restarts nginx and waits for the alert to clear. |
 | 6. Attack drill | Python | About 2 attacks per second while a normal user browses: `WafAttackSpike` must fire, every attack must be blocked, no legitimate request refused. |
 | 7. Benchmark | GoTestWAF | Thousands of payloads from an independent tool; summary in the run page. |
@@ -85,9 +85,10 @@ Taken by the CI during the alert drill ([`refresh-screenshots`](.github/workflow
 
 | Feature | How | Proof |
 |---|---|---|
-| WAF | ModSecurity v3 + OWASP CRS 4.30, paranoia level 2, anomaly threshold 5 | 21/21 attacks blocked, 12/12 tricky legitimate requests allowed (`make waf-check`) |
-| Tuning | 3 exclusions, each for one rule, one field, one URL (password, review text, profile URL) | before tuning: 9/12 legitimate requests allowed |
-| Local rules | IP deny list, virtual patch for `/actuator` and co., JSON-only API writes (415) | WAF tests |
+| WAF | ModSecurity v3 + OWASP CRS 4.30, blocks at paranoia level 1, logs level 2, anomaly threshold 5 | own corpus: 24/24 attacks blocked, 12/12 tricky legitimate requests allowed (`make waf-check`) |
+| Independent benchmark | GoTestWAF at levels 1 to 4 (`waf-benchmark` workflow) | level 1: 78.5% of non-encoded attacks blocked, 90.8% of legitimate texts allowed; level 2: 86.4% / 64.5% |
+| Tuning | 3 exclusions, each for one rule, one field, one URL (password, review text, profile URL) | before tuning: 11/12 (level 1), 9/12 (level 2) legitimate requests allowed |
+| Local rules | IP deny list, virtual patches (`/actuator`, XXE, UTF-7 XML, out-of-band callback domains), JSON-only API writes (415) | WAF tests |
 | Rate limit | 10 login attempts per minute per IP, burst 5, then 429 | `test_login_is_rate_limited` |
 | Origin protection | origins require the edge client certificate (mTLS), else 403 | `test_origins_refuse_requests_that_bypass_the_edge` |
 | Cache | follows `Cache-Control`, never `/api/`, bypassed with credentials, compression at the edge | cache tests |

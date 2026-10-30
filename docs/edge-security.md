@@ -90,14 +90,24 @@ The own corpus was written while building the lab, so it proves the tuning but i
 measure. [GoTestWAF](https://github.com/wallarm/gotestwaf) (Wallarm, open source) sends its own attacks in
 URLs, forms, multipart, JSON, XML, headers and paths, plus 141 legitimate texts built to look suspicious
 ("union was a great select", "bash away in the gym"). It runs in every CI build, and the manual workflow
-`waf-benchmark` compares the paranoia levels on fresh labs. Results: BENCHMARK_TABLE
+`waf-benchmark` compares the paranoia levels on fresh labs. Results:
+
+| Blocking level | Own corpus: attacks / legitimate | GoTestWAF attacks blocked | same, without Base64 payloads | GoTestWAF legitimate texts allowed |
+|---|---|---|---|---|
+| **1 (chosen)** | 24/24 / 12/12 | 340/668 = 50.9% | 340/433 = **78.5%** | 128/141 = **90.8%** |
+| 2 | 24/24 / 12/12 | 374/668 = 56.0% | 374/433 = 86.4% | 91/141 = 64.5% |
+| 3 | 24/24 / 10/12 | 457/668 = 68.4% | 402/433 = 92.8% | 48/141 = 34.0% |
+| 4 | 24/24 / 4/12 | 502/668 = 75.1% | 423/433 = 97.7% | 0/141 = 0% |
+
+Each row is a fresh lab built by the `waf-benchmark` workflow (GoTestWAF v0.5.11, CRS 4.30, same exclusions
+and local rules), on 30/10/2026.
 
 About a third of GoTestWAF's attacks are Base64-encoded. A Base64 string is harmless unless the
 application decodes it, and pattern-based WAFs (CRS, and most managed rule sets) do not decode it, so the
 results are shown with and without them.
 
-**Decision:** block at level 1, detect at level 2. Level 2 blocks about 9 points more attacks but refuses
-about a third of GoTestWAF's legitimate texts. For a customer site, that many false positives would get
+**Decision:** block at level 1, detect at level 2. Level 2 blocks 8 points more of the non-encoded attacks
+but refuses about a third of GoTestWAF's legitimate texts (50 instead of 13). For a customer site, that many false positives would get
 the WAF switched off. The level 2 rules still run in detection, so the audit log shows exactly which
 requests level 2 would block; the level can be raised per application once those are tuned.
 
@@ -148,8 +158,8 @@ The alert rules have unit tests (`tests/alerts_test.yml`, run by `promtool`), an
 - **Origin outage** (`tests/alert_drill.py`): nginx stops on web1, `NginxDown` fires, and the edge keeps
   serving the site from web2 during the outage, then sends traffic to web1 again.
 - **Attack campaign** (`tests/waf_drill.py`): about 2 malicious requests per second with every 403 payload
-  type of the corpus while a normal user keeps browsing. Measured on the lab: `WafAttackSpike` fired 51 s after the first
-  attack, 124/124 attacks were blocked, no legitimate request was refused, and the alert cleared 51 s after
+  type of the corpus while a normal user keeps browsing. Measured in CI: `WafAttackSpike` fired 54 s after the first
+  attack, 171/171 attacks were blocked, no legitimate request was refused, and the alert cleared 45 s after
   the attack stopped.
 
 Runbooks: [WAF attack spike](runbooks/waf-attack-spike.md), [certificates](runbooks/certificate-expiry.md).
