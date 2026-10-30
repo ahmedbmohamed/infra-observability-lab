@@ -69,10 +69,14 @@ jobs:
         run: tools/ci-step.sh make test
 
       - name: Alert drill - stop nginx on web1, the edge must fail over
-        run: tools/ci-step.sh python tests/alert_drill.py --screenshots screenshots
+        run: |
+          tools/ci-step.sh python tests/alert_drill.py --screenshots screenshots | tee alert-drill.log
+          tools/ci-notice.sh alert-drill.log "Outage drill"
 
       - name: WAF drill - attack campaign, WafAttackSpike must fire, no legitimate request blocked
-        run: tools/ci-step.sh python tests/waf_drill.py --screenshots screenshots
+        run: |
+          tools/ci-step.sh python tests/waf_drill.py --screenshots screenshots | tee waf-drill.log
+          tools/ci-notice.sh waf-drill.log "WAF drill"
 
       - uses: actions/setup-go@v5
         with:

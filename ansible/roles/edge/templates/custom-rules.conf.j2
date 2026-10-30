@@ -38,3 +38,16 @@ SecRule REQUEST_BODY|ARGS "@rx (?i)<!(?:DOCTYPE|ENTITY)[^>]*?\b(?:SYSTEM|PUBLIC)
     "id:10030,phase:2,deny,status:403,log,t:none,t:urlDecodeUni,\
     msg:'Virtual patch: XML external entity declaration',\
     logdata:'%{MATCHED_VAR_NAME}',tag:'attack-xxe',tag:'local-rule'"
+
+# Same attack hidden with UTF-7 ("+ADwAIQ-DOCTYPE" is "<!DOCTYPE"). No client of this site sends UTF-7 XML.
+SecRule REQUEST_BODY|ARGS "@rx (?i)<\?xml[^>]*encoding\s*=\s*[\"']?utf-7" \
+    "id:10031,phase:2,deny,status:403,log,t:none,t:urlDecodeUni,\
+    msg:'XML document encoded in UTF-7 (filter evasion)',\
+    tag:'attack-xxe',tag:'local-rule'"
+
+# Out-of-band testing services: attackers put these domains in headers or parameters to see if a server
+# calls them back (blind SSRF, Log4Shell, blind XXE). A real customer request never contains them.
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@pm burpcollaborator.net oastify.com interact.sh oast.pro oast.live oast.site oast.online oast.fun oast.me dnslog.cn requestbin.net canarytokens.com" \
+    "id:10040,phase:2,deny,status:403,log,t:none,t:lowercase,t:urlDecodeUni,\
+    msg:'Out-of-band testing domain in the request',\
+    logdata:'%{MATCHED_VAR_NAME}',tag:'attack-oast',tag:'local-rule'"
