@@ -33,7 +33,7 @@ jobs:
           ansible-galaxy collection install -r ansible/requirements.yml
 
       - name: Lint Terraform (lab and Cloudflare), YAML, Ansible and alert rules, and unit-test the alerts
-        run: make lint
+        run: tools/ci-step.sh make lint
 
   deploy-and-test:
     needs: lint
@@ -57,22 +57,22 @@ jobs:
           python -m playwright install --with-deps chromium
 
       - name: Terraform - create the lab
-        run: make up
+        run: tools/ci-step.sh make up
 
       - name: Ansible - configure the servers
-        run: make configure
+        run: tools/ci-step.sh make configure
 
       - name: Ansible - second run must change nothing
-        run: make idempotence
+        run: tools/ci-step.sh make idempotence
 
       - name: Tests - edge (WAF, origin pull, cache, rate limit), HTTPS, SSH, Prometheus, Grafana
-        run: make test
+        run: tools/ci-step.sh make test
 
       - name: Alert drill - stop nginx on web1, the edge must fail over
-        run: python tests/alert_drill.py --screenshots screenshots
+        run: tools/ci-step.sh python tests/alert_drill.py --screenshots screenshots
 
       - name: WAF drill - attack campaign, WafAttackSpike must fire, no legitimate request blocked
-        run: python tests/waf_drill.py --screenshots screenshots
+        run: tools/ci-step.sh python tests/waf_drill.py --screenshots screenshots
 
       - uses: actions/setup-go@v5
         with:
@@ -81,7 +81,9 @@ jobs:
 
       - name: GoTestWAF - independent WAF benchmark
         run: |
-          tools/gotestwaf.sh https://localhost:8440/ | tee -a "$GITHUB_STEP_SUMMARY"
+          tools/ci-step.sh tools/gotestwaf.sh https://localhost:8440/ | tee gotestwaf.log
+          sed -n '/^GoTestWAF against/,$p' gotestwaf.log | tee -a "$GITHUB_STEP_SUMMARY" > reports/gotestwaf-summary.md
+          echo "::notice title=GoTestWAF results::$(awk '{printf "%s%%0A", $0}' reports/gotestwaf-summary.md)"
 
       - name: Show the services when something failed
         if: failure()

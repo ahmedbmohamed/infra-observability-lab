@@ -15,6 +15,10 @@ locals {
     https_port = 8440
   }
 
+  all_nodes = concat(keys(local.web_nodes), ["edge"])
+  # Probed by blackbox_exporter on the edge: availability and certificate expiry.
+  probe_targets = concat(["https://edge/healthz"], [for n in keys(local.web_nodes) : "https://${n}/healthz"])
+
   node_image_dir = "${path.module}/../images/node"
   monitoring_dir = "${path.module}/../monitoring"
 }
@@ -121,11 +125,7 @@ resource "docker_container" "prometheus" {
   # The scrape targets come from web_nodes, so adding a server also adds it to monitoring.
   upload {
     file    = "/etc/prometheus/prometheus.yml"
-    content = templatefile("${path.module}/templates/prometheus.yml.tftpl", {
-      nodes = concat(keys(local.web_nodes), ["edge"])
-      # Probed by blackbox_exporter on the edge: availability and certificate expiry.
-      probes = concat(["https://edge/healthz"], [for n in keys(local.web_nodes) : "https://${n}/healthz"])
-    })
+    content = templatefile("${path.module}/templates/prometheus.yml.tftpl", { nodes = local.all_nodes, probes = local.probe_targets })
   }
 
   upload {
