@@ -10,6 +10,8 @@
 set -euo pipefail
 
 VERSION="${GOTESTWAF_VERSION:-v0.5.11}"
+# Extra options for the summary, for example GOTESTWAF_SUMMARY="--details --min-blocked 80"
+read -r -a SUMMARY_ARGS <<< "${GOTESTWAF_SUMMARY:-}"
 URL="${1:-https://localhost:8440/}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/.cache/gotestwaf-$VERSION"
@@ -35,4 +37,4 @@ cd "$SRC"  # GoTestWAF reads its payloads from ./testcases
   --reportName gotestwaf \
   --reportFormat json,html
 
-python3 "$ROOT/tools/gotestwaf_summary.py" "$ROOT/reports/gotestwaf.json"
+python3 "$ROOT/tools/gotestwaf_summary.py" "$ROOT/reports/gotestwaf.json" "${SUMMARY_ARGS[@]}"

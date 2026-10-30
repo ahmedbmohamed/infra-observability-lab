@@ -22,8 +22,8 @@ init:
 up: keys init ## Create the network, servers, Prometheus and Grafana
 	$(TF) -chdir=terraform apply -input=false -auto-approve
 
-configure: ## Configure the servers with Ansible
-	cd ansible && ansible-playbook site.yml
+configure: ## Configure the servers with Ansible (extra options: ANSIBLE_ARGS="-e edge_paranoia_level=3")
+	cd ansible && ansible-playbook site.yml $(ANSIBLE_ARGS)
 
 idempotence: ## Second Ansible run: must change nothing
 	cd ansible && ansible-playbook site.yml | tee ../.secrets/second-run.log

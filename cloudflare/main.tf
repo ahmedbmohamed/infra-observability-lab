@@ -67,7 +67,8 @@ resource "cloudflare_ruleset" "custom_rules" {
   rules       = local.custom_rules
 }
 
-# Lab: limit_req zone=login (10 per minute, burst 5). The free plan only allows a 10 s period.
+# Lab: limit_req zone=login (10 per minute, burst 5). Free plan: one rule, 10 s period and 10 s timeout,
+# and only a few fields in the expression (the URI path is one of them, the method is not).
 resource "cloudflare_ruleset" "rate_limit" {
   zone_id     = var.zone_id
   name        = "Edge rate limiting"
@@ -78,7 +79,7 @@ resource "cloudflare_ruleset" "rate_limit" {
   rules = [{
     ref         = "login_rate_limit"
     description = "At most 5 login attempts per 10 seconds per IP and data center"
-    expression  = "(http.request.uri.path eq \"${var.login_path}\" and http.request.method eq \"POST\")"
+    expression  = "(http.request.uri.path eq \"${var.login_path}\")"
     action      = "block"
     ratelimit = {
       characteristics     = ["cf.colo.id", "ip.src"]

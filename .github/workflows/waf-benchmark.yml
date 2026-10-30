@@ -1,0 +1,71 @@
+name: waf-benchmark
+
+# Run by hand: GoTestWAF against the edge at several CRS paranoia levels, to choose the level with data.
+on:
+  workflow_dispatch:
+    inputs:
+      levels:
+        description: "Paranoia levels to compare (JSON list)"
+        default: "[1, 2, 3]"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        level: ${{ fromJSON(inputs.levels) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Install the tools
+        run: |
+          pip install ansible-core==2.17.* cryptography -r tests/requirements.txt
+          ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Build the lab at paranoia level ${{ matrix.level }}
+        run: |
+          tools/ci-step.sh make up
+          tools/ci-step.sh make configure ANSIBLE_ARGS="-e edge_paranoia_level=${{ matrix.level }}"
+
+      - name: Own corpus
+        run: tools/ci-step.sh python tests/waf_corpus.py | tee corpus.log
+
+      - name: GoTestWAF
+        env:
+          GOTESTWAF_SUMMARY: --details
+        run: |
+          tools/ci-step.sh tools/gotestwaf.sh https://localhost:8440/ | tee gotestwaf.log
+          {
+            echo "## Paranoia level ${{ matrix.level }}"
+            tail -n 1 corpus.log
+            sed -n '/^GoTestWAF against/,$p' gotestwaf.log
+          } | tee -a "$GITHUB_STEP_SUMMARY" > reports/summary-pl${{ matrix.level }}.md
+          echo "::notice title=PL${{ matrix.level }}::$(awk '{printf "%s%%0A", $0}' reports/summary-pl${{ matrix.level }}.md | cut -c1-60000)"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gotestwaf-pl${{ matrix.level }}
+          path: reports/
+
+      - name: Destroy the lab
+        if: always()
+        run: make down

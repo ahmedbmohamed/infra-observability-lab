@@ -4,10 +4,14 @@
 
 A small Linux infrastructure that builds, configures and checks itself:
 
-- **Terraform** creates the network, two web servers, Prometheus and Grafana.
+- **Terraform** creates the network, two web servers, an edge server, Prometheus and Grafana.
 - **Ansible** hardens the servers and installs nginx over HTTPS. The certificates come from an internal CA.
-- **Prometheus** collects metrics and raises alerts. **Grafana** shows them on a dashboard.
-- **GitHub Actions** runs everything on each push. A test stops nginx on purpose and checks that the alert fires.
+- **The edge** is the only public entry point, like a CDN/WAF: **ModSecurity with the OWASP Core Rule Set 4**
+  (tuned to zero false positives on the test corpus), virtual patches, rate limiting, a cache, and
+  **authenticated origin pull** (the web servers only answer to the edge's client certificate).
+  Details: [docs/edge-security.md](docs/edge-security.md). The same policy for Cloudflare, in Terraform: [cloudflare/](cloudflare/README.md).
+- **Prometheus** collects metrics, probes the HTTPS endpoints and certificates, and raises alerts. **Grafana** shows them.
+- **GitHub Actions** runs everything on each push: tests, an outage drill, an attack drill and the GoTestWAF benchmark.
 
 Everything runs on Docker on a single machine. It costs nothing and needs no cloud account.
 
@@ -22,7 +26,12 @@ flowchart LR
         PT[pytest + alert drill]
     end
 
+    U[Client] -- HTTPS :8440 --> edge
     subgraph net[Docker network iol-lab 172.30.0.0/24]
+        subgraph edge[edge]
+            W[nginx + ModSecurity<br/>OWASP CRS 4, cache,<br/>rate limit]
+            EE[edge_exporter :9145<br/>blackbox_exporter :9115]
+        end
         subgraph web1[web1]
             N1[nginx HTTPS]
             E1[node_exporter :9100<br/>nginx_exporter :9113]
@@ -35,23 +44,26 @@ flowchart LR
         G[Grafana<br/>dashboard]
     end
 
+    W -- "mTLS (client certificate)" --> N1 & N2
     TF -- creates --> net
     TF -- writes inventory --> AN
-    AN -- SSH, key only --> web1 & web2
+    AN -- SSH, key only --> edge & web1 & web2
     CA -- signs certificates --> AN
-    P -- scrapes --> E1 & E2
+    P -- scrapes --> E1 & E2 & EE
     G -- queries --> P
     PT -- HTTPS, SSH, APIs --> net
 ```
 
 | Step | Tool | What happens |
 |---|---|---|
-| 1. Provision | Terraform | Builds the server image and creates the network, `web1`, `web2`, Prometheus and Grafana. It generates the Prometheus scrape targets and the Ansible inventory from the same list of servers, so `web_count = 3` adds a server everywhere. |
-| 2. Configure | Ansible | Roles `common` (packages, SSH hardening), `pki` (internal CA and one certificate per server), `node_exporter`, `nginx` (TLS site, security headers, status page, exporter). |
+| 1. Provision | Terraform | Builds the server image and creates the network, `edge`, `web1`, `web2`, Prometheus and Grafana. It generates the Prometheus scrape targets, the probe targets and the Ansible inventory from the same list of servers, so `web_count = 3` adds a server everywhere (also behind the edge). |
+| 2. Configure | Ansible | Roles `common` (packages, SSH hardening), `pki` (internal CA, server certificates, the edge client certificate), `node_exporter`, `nginx` (TLS site, security headers, status page, exporter), and on the edge `blackbox_exporter` and `edge` (ModSecurity, CRS, cache, rate limit, edge_exporter). |
 | 3. Check | Ansible | A second run must report `changed=0` (idempotence). |
-| 4. Test | pytest | 18 tests on HTTPS, TLS versions, headers, SSH rules, Prometheus targets and rules, Grafana. |
-| 5. Alert drill | Python | Stops nginx on `web1`, waits for `NginxDown` to fire, restarts nginx, waits for the alert to clear. |
-| 6. Clean up | Terraform | `terraform destroy`, always, even when a step fails. |
+| 4. Test | pytest | 67 tests: 33 WAF cases (attacks blocked, legitimate requests allowed), origin protection, cache, rate limit, TLS policy, probes, HTTPS, SSH rules, Prometheus, Grafana. |
+| 5. Outage drill | Python | Stops nginx on `web1`: `NginxDown` must fire and the edge must keep serving from `web2`. Then restarts nginx and waits for the alert to clear. |
+| 6. Attack drill | Python | About 2 attacks per second while a normal user browses: `WafAttackSpike` must fire, every attack must be blocked, no legitimate request refused. |
+| 7. Benchmark | GoTestWAF | Thousands of payloads from an independent tool; summary in the run page. |
+| 8. Clean up | Terraform | `terraform destroy`, always, even when a step fails. |
 
 ## Screenshots
 
@@ -68,6 +80,23 @@ Taken by the CI during the alert drill ([`refresh-screenshots`](.github/workflow
 **After the repair:** web1 is back up and the alert has cleared.
 
 ![Grafana after the repair](docs/screenshots/grafana-dashboard.png)
+
+## Edge security in short
+
+| Feature | How | Proof |
+|---|---|---|
+| WAF | ModSecurity v3 + OWASP CRS 4.30, paranoia level 2, anomaly threshold 5 | 21/21 attacks blocked, 12/12 tricky legitimate requests allowed (`make waf-check`) |
+| Tuning | 3 exclusions, each for one rule, one field, one URL (password, review text, profile URL) | before tuning: 9/12 legitimate requests allowed |
+| Local rules | IP deny list, virtual patch for `/actuator` and co., JSON-only API writes (415) | WAF tests |
+| Rate limit | 10 login attempts per minute per IP, burst 5, then 429 | `test_login_is_rate_limited` |
+| Origin protection | origins require the edge client certificate (mTLS), else 403 | `test_origins_refuse_requests_that_bypass_the_edge` |
+| Cache | follows `Cache-Control`, never `/api/`, bypassed with credentials, compression at the edge | cache tests |
+| TLS | 1.2/1.3, ECDHE + AEAD only, HSTS; the edge verifies the origin certificates | TLS tests |
+| Traceability | `X-Request-ID` in the response = transaction ID in the WAF audit log | `tools/waf_report.py --request-id` |
+| Monitoring | probes and certificate expiry (blackbox_exporter), WAF and cache metrics (edge_exporter), *Edge security* dashboard | alert drills |
+
+Full write-up: [docs/edge-security.md](docs/edge-security.md). Runbooks: [WAF attack spike](docs/runbooks/waf-attack-spike.md),
+[certificates](docs/runbooks/certificate-expiry.md). Client-style report: [docs/assessment-report.md](docs/assessment-report.md).
 
 ## What the servers get
 
@@ -101,6 +130,11 @@ Defined in [`monitoring/alerts.yml`](monitoring/alerts.yml) and unit-tested with
 | LowMemory | less than 10% memory available | 5 min | warning |
 | LowDiskSpace | less than 10% free on `/` | 10 min | warning |
 | NginxNoTraffic | nginx is up but gets no requests | 15 min | info |
+| EndpointProbeFailed | an HTTPS probe fails (down, bad status, untrusted certificate) | 1 min | critical |
+| CertificateExpiringSoon | a certificate expires in less than 21 days | 10 min | warning |
+| CertificateExpiryCritical | a certificate expires in less than 7 days | 10 min | critical |
+| WafAttackSpike | the WAF blocks more than 30 requests per minute | 30 s | warning |
+| EdgeHighErrorRate | more than 5% of the edge responses are 5xx | 5 min | critical |
 
 ## Run it yourself
 
@@ -115,6 +149,9 @@ make configure     # Ansible: configure the servers
 make idempotence   # Ansible again: must change nothing
 make test          # pytest
 make drill         # stop nginx on web1 and watch the alert
+make waf-check     # attack and legitimate corpus against the edge, as a table
+make waf-drill     # attack campaign: WafAttackSpike must fire
+make gotestwaf     # independent benchmark (needs Go)
 make down          # destroy everything
 ```
 
@@ -122,7 +159,8 @@ Or `make all` for the whole sequence. `make help` lists the steps.
 
 | URL | What |
 |---|---|
-| https://localhost:8443, https://localhost:8444 | web1, web2 (trust `.secrets/pki/ca.crt` or use `curl --cacert`) |
+| https://localhost:8440 | the site, through the edge (trust `.secrets/pki/ca.crt` or use `curl --cacert`) |
+| https://localhost:8443, https://localhost:8444 | web1, web2 directly: 403 without the edge client certificate (only `/healthz` is open) |
 | http://localhost:9090 | Prometheus |
 | http://localhost:3000 | Grafana, user `admin`, password from `terraform -chdir=terraform output -raw grafana_admin_password` |
 
@@ -132,8 +170,8 @@ The SSH key, the CA and the certificates are created in `.secrets/` on your mach
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) has two jobs:
 
-1. **lint**: `terraform fmt` and `validate`, `yamllint`, `ansible-lint` (production profile), `promtool check rules` and the alert unit tests.
-2. **deploy-and-test**: steps 1 to 6 from the table above on a fresh GitHub runner. When a step fails, it prints the service status and logs. Screenshots and the second Ansible run are kept as artifacts.
+1. **lint**: `terraform fmt` and `validate` (lab and Cloudflare), `yamllint`, `ansible-lint` (production profile), `promtool check rules` and the alert unit tests.
+2. **deploy-and-test**: steps 1 to 8 from the table above on a fresh GitHub runner. When a step fails, its last lines go into an error annotation and the service status and logs are printed. Screenshots, the GoTestWAF reports and the second Ansible run are kept as artifacts.
 
 A [`Jenkinsfile`](Jenkinsfile) runs the same `make` steps on a Jenkins agent with Docker. The pipeline that actually runs for this repository is GitHub Actions.
 
@@ -149,11 +187,14 @@ A [`Jenkinsfile`](Jenkinsfile) runs the same `make` steps on a Jenkins agent wit
 ## Repository layout
 
 ```
-terraform/          network, servers, Prometheus, Grafana, generated inventory
+terraform/          network, servers, edge, Prometheus, Grafana, generated inventory
+cloudflare/         the edge policy for Cloudflare (Terraform, provider v5)
 images/node/        server image: Ubuntu 24.04, sshd, supervisord, ops user
-ansible/            site.yml and roles: common, pki, node_exporter, nginx
-monitoring/         alert rules, Grafana datasource and dashboard
-tests/              pytest suite, alert drill, promtool alert tests
+ansible/            site.yml and roles: common, pki, node_exporter, nginx, blackbox_exporter, edge
+monitoring/         alert rules, Grafana datasource and dashboards
+tests/              pytest suite, WAF corpus, outage and attack drills, promtool alert tests
+tools/              WAF audit log report, GoTestWAF runner and summary, CI helper
+docs/               edge security write-up, assessment report, runbooks, screenshots
 .github/workflows/  CI pipeline
 Jenkinsfile         same pipeline for Jenkins
 ```

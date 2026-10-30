@@ -8,6 +8,7 @@ With --min-blocked / --min-passed it exits with an error below those percentages
 import argparse
 import json
 import sys
+from collections import Counter
 
 
 def pct(part: int, whole: int) -> float:
@@ -19,6 +20,7 @@ def main() -> int:
     parser.add_argument("report")
     parser.add_argument("--min-blocked", type=float)
     parser.add_argument("--min-passed", type=float)
+    parser.add_argument("--details", action="store_true", help="where the bypasses and the false positives are")
     args = parser.parse_args()
 
     data = json.load(open(args.report, encoding="utf-8"))
@@ -40,6 +42,18 @@ def main() -> int:
     for set_name, cases in sorted(tp.get("test_sets", {}).items()):
         for case_name, c in sorted(cases.items()):
             print(f"| {set_name} / {case_name} | {c['sent']} | {c['blocked']} | {c['bypassed']} | {c['percentage']:.1f}% |")
+
+    if args.details:
+        bypassed = (data.get("true_positive_tests_payloads") or {}).get("bypassed") or []
+        fps = (data.get("true_negative_tests_payloads") or {}).get("blocked") or []
+        for title, items in (("Bypasses (attacks not blocked)", bypassed), ("False positives (legitimate requests blocked)", fps)):
+            print(f"\n{title}: {len(items)}\n\n| Placeholder | Encoder | Count |\n|---|---|---|")
+            for (place, enc), n in Counter((i.get("placeholder"), i.get("encoder")) for i in items).most_common(15):
+                print(f"| {place} | {enc} | {n} |")
+            print("\nExamples:")
+            for i in items[:12]:
+                payload = str(i.get("payload", ""))[:90].replace("|", "\\|").replace("\n", " ")
+                print(f"- `{i.get('placeholder')}` / `{i.get('encoder')}` / {i.get('test_case')}: `{payload}`")
 
     failed = False
     if args.min_blocked is not None and blocked < args.min_blocked:
