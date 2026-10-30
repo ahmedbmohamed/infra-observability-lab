@@ -24,17 +24,31 @@ fi
 
 mkdir -p "$ROOT/reports"
 cd "$SRC"  # GoTestWAF reads its payloads from ./testcases
+
+# Second set of test cases without the Base64 encoder: a Base64-encoded attack is harmless unless the
+# application decodes it, and pattern-based WAFs do not decode it. Both results are reported.
+rm -rf testcases-nobase64 && cp -r testcases testcases-nobase64
+find testcases-nobase64 -name '*.yml' -exec sed -i -E '/^\s*- Base64(Flat)?\s*$/d' {} +
 # 403 = blocked by the WAF. 200/404/405 = reached the origin (405: POST on a static page).
 # 415 is left out on purpose: GoTestWAF counts it as "unresolved" instead of hiding it in either side.
-./gotestwaf \
-  --url "$URL" \
-  --skipWAFIdentification \
-  --noEmailReport \
-  --blockStatusCodes 403 \
-  --passStatusCodes 200,404,405 \
-  --workers 4 \
-  --reportPath "$ROOT/reports" \
-  --reportName gotestwaf \
-  --reportFormat json,html
+run() {  # $1 = test case folder, $2 = report name
+  ./gotestwaf \
+    --url "$URL" \
+    --testCasesPath "$1" \
+    --skipWAFIdentification \
+    --noEmailReport \
+    --blockStatusCodes 403 \
+    --passStatusCodes 200,404,405 \
+    --workers 4 \
+    --reportPath "$ROOT/reports" \
+    --reportName "$2" \
+    --reportFormat json,html
+}
+
+run testcases gotestwaf
+run testcases-nobase64 gotestwaf-nobase64
 
 python3 "$ROOT/tools/gotestwaf_summary.py" "$ROOT/reports/gotestwaf.json" "${SUMMARY_ARGS[@]}"
+echo
+echo "Without Base64-encoded payloads:"
+python3 "$ROOT/tools/gotestwaf_summary.py" "$ROOT/reports/gotestwaf-nobase64.json" --brief

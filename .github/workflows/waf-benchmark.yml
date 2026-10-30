@@ -58,7 +58,8 @@ jobs:
             tail -n 1 corpus.log
             sed -n '/^GoTestWAF against/,$p' gotestwaf.log
           } | tee -a "$GITHUB_STEP_SUMMARY" > reports/summary-pl${{ matrix.level }}.md
-          echo "::notice title=PL${{ matrix.level }}::$(awk '{printf "%s%%0A", $0}' reports/summary-pl${{ matrix.level }}.md | cut -c1-60000)"
+          grep -v '^| community\|^| owasp' reports/summary-pl${{ matrix.level }}.md > notice.md
+          tools/ci-notice.sh notice.md "PL${{ matrix.level }}"
 
       - uses: actions/upload-artifact@v4
         if: always()

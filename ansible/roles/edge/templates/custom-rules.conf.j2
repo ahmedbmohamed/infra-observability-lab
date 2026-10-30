@@ -31,3 +31,10 @@ SecRule REQUEST_FILENAME "@beginsWith /api/" \
     chain"
     SecRule REQUEST_METHOD "@within POST PUT PATCH" "t:none,chain"
         SecRule REQUEST_HEADERS:Content-Type "!@rx (?i)^application/json(?:\s*;.*)?$" "t:none"
+
+# Virtual patch: XML external entities (XXE). The CRS has no rule for a document type that declares an
+# external entity (found by GoTestWAF), and no API of this site needs one.
+SecRule REQUEST_BODY|ARGS "@rx (?i)<!(?:DOCTYPE|ENTITY)[^>]*?\b(?:SYSTEM|PUBLIC)\b" \
+    "id:10030,phase:2,deny,status:403,log,t:none,t:urlDecodeUni,\
+    msg:'Virtual patch: XML external entity declaration',\
+    logdata:'%{MATCHED_VAR_NAME}',tag:'attack-xxe',tag:'local-rule'"

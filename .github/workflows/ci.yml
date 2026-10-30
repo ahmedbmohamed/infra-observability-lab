@@ -83,7 +83,7 @@ jobs:
         run: |
           tools/ci-step.sh tools/gotestwaf.sh https://localhost:8440/ | tee gotestwaf.log
           sed -n '/^GoTestWAF against/,$p' gotestwaf.log | tee -a "$GITHUB_STEP_SUMMARY" > reports/gotestwaf-summary.md
-          echo "::notice title=GoTestWAF results::$(awk '{printf "%s%%0A", $0}' reports/gotestwaf-summary.md)"
+          tools/ci-notice.sh reports/gotestwaf-summary.md "GoTestWAF results"
 
       - name: Show the services when something failed
         if: failure()
