@@ -36,3 +36,29 @@ scrape_configs:
       - source_labels: [__address__]
         regex: "([^:]+):.*"
         target_label: instance
+
+  - job_name: edge
+    static_configs:
+      - targets: ["edge:9145"]
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "([^:]+):.*"
+        target_label: instance
+
+  # blackbox_exporter runs on the edge and probes each URL; the URL becomes the "instance" label.
+  - job_name: blackbox
+    metrics_path: /probe
+    params:
+      module: [https_lab]
+    static_configs:
+      - targets:
+%{ for p in probes ~}
+          - "${p}"
+%{ endfor ~}
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: "edge:9115"

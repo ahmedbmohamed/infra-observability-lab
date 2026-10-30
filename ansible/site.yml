@@ -1,5 +1,5 @@
 ---
-- name: Configure the web servers
+- name: Configure the web servers (origins)
   hosts: web
   become: true
   # Nothing below uses facts, and skipping them makes the run faster.
@@ -34,5 +34,49 @@
           - services.stdout is search('nginx\s+RUNNING')
           - services.stdout is search('node_exporter\s+RUNNING')
           - services.stdout is search('nginx_exporter\s+RUNNING')
+        fail_msg: "{{ services.stdout_lines }}"
+        quiet: true
+
+# After the origins: the edge resolves and checks them when nginx starts.
+- name: Configure the edge (WAF, cache, rate limiting)
+  hosts: edge
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Wait for SSH on freshly created servers
+      ansible.builtin.wait_for_connection:
+        timeout: 90
+
+  roles:
+    - common
+    - pki
+    - node_exporter
+    - role: nginx
+      vars:
+        nginx_lab_site: false
+    - blackbox_exporter
+    - edge
+
+  post_tasks:
+    - name: Wait until every service is running
+      ansible.builtin.command: supervisorctl status  # noqa: command-instead-of-module
+      register: services
+      changed_when: false
+      failed_when: false
+      retries: 10
+      delay: 2
+      until: >-
+        services.stdout_lines | select('search', 'RUNNING') | list | length == 6
+
+    - name: Check that sshd, nginx, the WAF exporter and the other exporters are running
+      ansible.builtin.assert:
+        that:
+          - services.stdout is search('sshd\s+RUNNING')
+          - services.stdout is search('nginx\s+RUNNING')
+          - services.stdout is search('node_exporter\s+RUNNING')
+          - services.stdout is search('nginx_exporter\s+RUNNING')
+          - services.stdout is search('blackbox_exporter\s+RUNNING')
+          - services.stdout is search('edge_exporter\s+RUNNING')
         fail_msg: "{{ services.stdout_lines }}"
         quiet: true

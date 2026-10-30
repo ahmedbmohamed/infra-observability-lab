@@ -1,0 +1,34 @@
+---
+# OWASP Core Rule Set, pinned. The SHA-256 was computed on the release file downloaded from GitHub
+# (https://github.com/coreruleset/coreruleset/releases/tag/v4.30.0) and is checked on every run.
+edge_crs_version: 4.30.0
+edge_crs_sha256: 3d678a41fd5aade34760127fef5dd64fd7a77848913fc0f70dde0cf467c94427
+edge_crs_url: "https://github.com/coreruleset/coreruleset/releases/download/v{{ edge_crs_version }}/coreruleset-{{ edge_crs_version }}-minimal.tar.gz"
+edge_crs_dir: "/opt/coreruleset-{{ edge_crs_version }}"
+
+# "On" blocks, "DetectionOnly" only logs. A new site starts in DetectionOnly, gets tuned, then moves to On.
+edge_waf_mode: "On"
+# CRS paranoia level: 1 = few false positives, 4 = strict. Level 2 here, after tuning (see docs/edge-security.md).
+edge_paranoia_level: 2
+# A request is blocked when the sum of its rule scores reaches this value (critical rule = 5).
+edge_inbound_threshold: 5
+edge_outbound_threshold: 4
+edge_allowed_methods: GET HEAD POST OPTIONS
+# Incident response: client IPs or CIDRs to block at the edge (rule 10001).
+edge_ip_denylist: []
+edge_audit_log: /var/log/modsec/audit.json
+
+# The origin servers: every host of the "web" group, reached over HTTPS under the shared name pki_origin_name
+# with the client certificate pki_edge_client_cn (both issued by the pki role).
+edge_origins: "{{ groups['web'] }}"
+
+# CDN-style cache. The origin decides what is cacheable with Cache-Control.
+edge_cache_dir: /var/cache/nginx/edge
+edge_cache_size: 200m
+
+# Rate limit on the login API, per client IP.
+edge_login_rate: 10r/m
+edge_login_burst: 5
+
+edge_access_log: /var/log/nginx/edge-access.json
+edge_exporter_listen_port: 9145

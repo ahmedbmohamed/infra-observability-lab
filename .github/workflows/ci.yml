@@ -32,7 +32,7 @@ jobs:
           pip install ansible-core==2.17.* ansible-lint==24.* yamllint==1.35.*
           ansible-galaxy collection install -r ansible/requirements.yml
 
-      - name: Lint Terraform, YAML, Ansible and alert rules, and unit-test the alerts
+      - name: Lint Terraform (lab and Cloudflare), YAML, Ansible and alert rules, and unit-test the alerts
         run: make lint
 
   deploy-and-test:
@@ -65,17 +65,29 @@ jobs:
       - name: Ansible - second run must change nothing
         run: make idempotence
 
-      - name: Tests - HTTPS, SSH, Prometheus, Grafana
+      - name: Tests - edge (WAF, origin pull, cache, rate limit), HTTPS, SSH, Prometheus, Grafana
         run: make test
 
-      - name: Alert drill - stop nginx on web1
+      - name: Alert drill - stop nginx on web1, the edge must fail over
         run: python tests/alert_drill.py --screenshots screenshots
+
+      - name: WAF drill - attack campaign, WafAttackSpike must fire, no legitimate request blocked
+        run: python tests/waf_drill.py --screenshots screenshots
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: GoTestWAF - independent WAF benchmark
+        run: |
+          tools/gotestwaf.sh https://localhost:8440/ | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Show the services when something failed
         if: failure()
         run: |
           docker ps -a
-          for c in iol-web1 iol-web2; do
+          for c in iol-edge iol-web1 iol-web2; do
             echo "::group::$c"
             docker exec "$c" supervisorctl status || true
             docker exec "$c" sh -c 'tail -n 50 /var/log/supervisor/*.log' || true
@@ -90,6 +102,7 @@ jobs:
           name: lab-results
           path: |
             screenshots/
+            reports/
             .secrets/second-run.log
           if-no-files-found: ignore
 

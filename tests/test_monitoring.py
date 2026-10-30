@@ -4,7 +4,10 @@ import requests
 
 from conftest import CA_CERT, wait_for
 
-EXPECTED_RULES = {"TargetDown", "NginxDown", "HighCpuUsage", "LowMemory", "LowDiskSpace", "NginxNoTraffic"}
+EXPECTED_RULES = {
+    "TargetDown", "NginxDown", "HighCpuUsage", "LowMemory", "LowDiskSpace", "NginxNoTraffic",
+    "EndpointProbeFailed", "CertificateExpiringSoon", "CertificateExpiryCritical", "WafAttackSpike", "EdgeHighErrorRate",
+}
 
 
 def targets(prometheus):
@@ -18,9 +21,11 @@ def test_every_target_is_up(prometheus):
 
 def test_each_server_is_scraped_by_node_and_nginx_jobs(prometheus, nodes):
     found = {(t["labels"]["job"], t["labels"]["instance"]) for t in targets(prometheus)}
-    for name in nodes:
+    for name in [*nodes, "edge"]:
         assert ("node", name) in found
         assert ("nginx", name) in found
+    assert ("edge", "edge") in found
+    assert ("blackbox", "https://edge/healthz") in found
 
 
 def test_alert_rules_are_loaded(prometheus):
@@ -71,7 +76,13 @@ def test_dashboard_is_provisioned(grafana):
     assert [d["uid"] for d in found] == ["iol-overview"]
 
 
+def test_edge_dashboard_is_provisioned(grafana):
+    url, auth = grafana
+    found = requests.get(f"{url}/api/search", params={"query": "Edge security"}, auth=auth, timeout=10).json()
+    assert [d["uid"] for d in found] == ["iol-edge"]
+
+
 def test_root_disk_is_measured(prometheus, nodes):
     q = 'node_filesystem_avail_bytes{mountpoint="/"}'
     result = requests.get(f"{prometheus}/api/v1/query", params={"query": q}, timeout=10).json()["data"]["result"]
-    assert {r["metric"]["instance"] for r in result} == set(nodes)
+    assert {r["metric"]["instance"] for r in result} == set(nodes) | {"edge"}

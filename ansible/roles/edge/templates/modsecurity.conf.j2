@@ -1,0 +1,52 @@
+# {{ ansible_managed }}
+# ModSecurity engine settings. The rules themselves come from the CRS and from the files next to this one.
+
+SecRuleEngine {{ edge_waf_mode }}
+
+# Inspect request bodies (forms, JSON, XML). Reject bodies too big to inspect instead of letting them through.
+SecRequestBodyAccess On
+SecRule REQUEST_HEADERS:Content-Type "^(?:application(?:/soap\+|/)|text/)xml" \
+    "id:200000,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=XML"
+SecRule REQUEST_HEADERS:Content-Type "^application/(?:[a-z0-9.+-]+\+)?json" \
+    "id:200001,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
+SecRequestBodyLimit 1048576
+SecRequestBodyNoFilesLimit 131072
+SecRequestBodyLimitAction Reject
+SecRequestBodyJsonDepthLimit 64
+SecArgumentsLimit 500
+SecRule &ARGS "@ge 500" \
+    "id:200007,phase:2,t:none,log,deny,status:400,msg:'Too many arguments to inspect'"
+SecRule REQBODY_ERROR "!@eq 0" \
+    "id:200002,phase:2,t:none,log,deny,status:400,msg:'Failed to parse request body',logdata:'%{reqbody_error_msg}'"
+SecRule MULTIPART_STRICT_ERROR "!@eq 0" \
+    "id:200003,phase:2,t:none,log,deny,status:400,msg:'Multipart request body failed strict validation'"
+SecRule MULTIPART_UNMATCHED_BOUNDARY "@eq 1" \
+    "id:200004,phase:2,t:none,log,deny,status:400,msg:'Multipart parser found an unmatched boundary'"
+
+# Fail closed if the regex engine gives up on a payload (often a sign of an evasion attempt).
+SecPcreMatchLimit 1000
+SecPcreMatchLimitRecursion 1000
+SecRule TX:/^MSC_/ "!@streq 0" \
+    "id:200005,phase:2,t:none,log,deny,status:500,msg:'ModSecurity internal error flagged: %{MATCHED_VAR_NAME}'"
+
+# Response inspection, for the data leakage rules (stack traces, SQL errors...).
+SecResponseBodyAccess On
+SecResponseBodyMimeType text/plain text/html text/xml application/json
+SecResponseBodyLimit 524288
+SecResponseBodyLimitAction ProcessPartial
+
+SecTmpDir /tmp/
+SecDataDir /tmp/
+SecArgumentSeparator &
+SecCookieFormat 0
+SecUnicodeMapFile /etc/nginx/unicode.mapping 20127
+SecStatusEngine Off
+
+# Audit log: one JSON document per line for each blocked or suspicious request.
+# Parts: A header, B request headers, F response headers, H rule matches, Z end. No bodies (C, E): they may hold passwords.
+SecAuditEngine RelevantOnly
+SecAuditLogRelevantStatus "^(?:5|4(?!04))"
+SecAuditLogParts ABFHZ
+SecAuditLogType Serial
+SecAuditLogFormat JSON
+SecAuditLog {{ edge_audit_log }}

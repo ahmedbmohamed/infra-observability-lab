@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+# Short version of crs-setup.conf.example (CRS {{ edge_crs_version }}): only the settings this site changes.
+
+# Anomaly scoring: rules add points and pass, the blocking rules (949/959) deny once the threshold is reached.
+SecDefaultAction "phase:1,log,auditlog,pass"
+SecDefaultAction "phase:2,log,auditlog,pass"
+
+SecAction \
+    "id:900000,phase:1,pass,t:none,nolog,tag:'OWASP_CRS',ver:'OWASP_CRS/{{ edge_crs_version }}',\
+    setvar:tx.blocking_paranoia_level={{ edge_paranoia_level }}"
+
+SecAction \
+    "id:900110,phase:1,pass,t:none,nolog,tag:'OWASP_CRS',ver:'OWASP_CRS/{{ edge_crs_version }}',\
+    setvar:tx.inbound_anomaly_score_threshold={{ edge_inbound_threshold }},\
+    setvar:tx.outbound_anomaly_score_threshold={{ edge_outbound_threshold }}"
+
+SecAction \
+    "id:900200,phase:1,pass,t:none,nolog,tag:'OWASP_CRS',ver:'OWASP_CRS/{{ edge_crs_version }}',\
+    setvar:'tx.allowed_methods={{ edge_allowed_methods }}'"
+
+{% set crs = edge_crs_version.split('.') %}
+SecAction \
+    "id:900990,phase:1,pass,t:none,nolog,tag:'OWASP_CRS',ver:'OWASP_CRS/{{ edge_crs_version }}',\
+    setvar:tx.crs_setup_version={{ crs[0] }}{{ crs[1] }}{{ crs[2] }}"

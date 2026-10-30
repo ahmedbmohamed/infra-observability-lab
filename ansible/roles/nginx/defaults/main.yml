@@ -1,4 +1,6 @@
 ---
+# false on the edge: the edge role installs the reverse proxy site instead of the origin site.
+nginx_lab_site: true
 nginx_site_root: /var/www/lab
 nginx_status_port: 8080
 

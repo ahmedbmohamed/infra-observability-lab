@@ -1,0 +1,28 @@
+---
+# edge_exporter.py reads the JSON access log and the WAF audit log and serves Prometheus metrics.
+- name: Create the edge_exporter system user (member of adm, to read the logs)
+  ansible.builtin.user:
+    name: edge_exporter
+    system: true
+    groups: [adm]
+    append: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Install the edge exporter
+  ansible.builtin.copy:
+    src: edge_exporter.py
+    dest: /usr/local/bin/edge_exporter.py
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart edge_exporter
+
+- name: Run the edge exporter under supervisor
+  ansible.builtin.template:
+    src: supervisor-edge-exporter.conf.j2
+    dest: /etc/supervisor/conf.d/edge_exporter.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Update supervisor

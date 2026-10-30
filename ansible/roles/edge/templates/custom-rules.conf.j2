@@ -1,0 +1,33 @@
+# {{ ansible_managed }}
+# Site-specific rules, evaluated before the CRS. IDs 10000-19999 are reserved for local rules.
+
+# Incident response: client IPs blocked by hand (edge_ip_denylist). One IP or CIDR per line in the file.
+SecRule REMOTE_ADDR "@ipMatchFromFile /etc/nginx/modsec/ip-denylist.txt" \
+    "id:10001,phase:1,deny,status:403,log,t:none,\
+    msg:'Client IP on the deny list',\
+    tag:'attack-denylist',tag:'local-rule'"
+
+# Virtual patch: management endpoints of Java frameworks must never be reachable from the Internet,
+# even if an application ships them by mistake.
+SecRule REQUEST_FILENAME "@rx (?i)/(?:actuator|jolokia|console|manager/html)(?:/|$)" \
+    "id:10010,phase:1,deny,status:403,log,t:none,t:urlDecodeUni,t:normalizePath,\
+    msg:'Virtual patch: management endpoint blocked',\
+    logdata:'%{REQUEST_FILENAME}',tag:'attack-virtual-patch',tag:'local-rule'"
+
+# API contract: write requests to the API must be JSON. Anything else is refused before it reaches the origin.
+# Two rules, because a negated match on a missing header never fires: 10020 = no Content-Type, 10021 = not JSON.
+SecRule REQUEST_FILENAME "@beginsWith /api/" \
+    "id:10020,phase:1,deny,status:415,log,t:none,\
+    msg:'API write request without a Content-Type',\
+    logdata:'%{REQUEST_METHOD} %{REQUEST_HEADERS.Content-Type}',tag:'attack-protocol',tag:'local-rule',\
+    chain"
+    SecRule REQUEST_METHOD "@within POST PUT PATCH" "t:none,chain"
+        SecRule &REQUEST_HEADERS:Content-Type "@eq 0" "t:none"
+
+SecRule REQUEST_FILENAME "@beginsWith /api/" \
+    "id:10021,phase:1,deny,status:415,log,t:none,\
+    msg:'API write request without a JSON body',\
+    logdata:'%{REQUEST_METHOD} %{REQUEST_HEADERS.Content-Type}',tag:'attack-protocol',tag:'local-rule',\
+    chain"
+    SecRule REQUEST_METHOD "@within POST PUT PATCH" "t:none,chain"
+        SecRule REQUEST_HEADERS:Content-Type "!@rx (?i)^application/json(?:\s*;.*)?$" "t:none"

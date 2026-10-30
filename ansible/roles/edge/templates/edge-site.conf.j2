@@ -1,0 +1,124 @@
+# {{ ansible_managed }}
+# The edge: TLS termination, WAF (ModSecurity + OWASP CRS), cache and rate limiting in front of the origin servers.
+
+log_format edge_json escape=json
+    '{"time":"$time_iso8601","request_id":"$request_id","client":"$remote_addr",'
+    '"method":"$request_method","uri":"$uri","status":$status,"bytes":$body_bytes_sent,'
+    '"cache":"$upstream_cache_status","upstream":"$upstream_addr","request_time":$request_time}';
+
+proxy_cache_path {{ edge_cache_dir }} levels=1:2 keys_zone=edge:10m max_size={{ edge_cache_size }} inactive=10m use_temp_path=off;
+limit_req_zone $binary_remote_addr zone=login:10m rate={{ edge_login_rate }};
+
+# Requests with credentials are never served from or stored in the shared cache.
+map "$http_authorization$cookie_session" $edge_skip_cache {
+    ""      0;
+    default 1;
+}
+
+upstream origin {
+{% for host in edge_origins %}
+    server {{ host }}:443 max_fails=2 fail_timeout=10s;
+{% endfor %}
+    keepalive 16;
+}
+
+server {
+    listen 80 default_server;
+    server_name _;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2 default_server;
+    server_name {{ inventory_hostname }} localhost;
+
+    ssl_certificate     {{ pki_remote_dir }}/{{ inventory_hostname }}.crt;
+    ssl_certificate_key {{ pki_remote_dir }}/{{ inventory_hostname }}.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    # TLS 1.2: forward secrecy and AEAD ciphers only (no CBC, no RSA key exchange).
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:EDGE:10m;
+    ssl_session_tickets off;
+
+    access_log {{ edge_access_log }} edge_json;
+
+    gzip on;
+    gzip_vary on;
+    gzip_types text/css application/json application/javascript image/svg+xml;
+
+    modsecurity on;
+    modsecurity_rules_file /etc/nginx/modsec/main.conf;
+    # Same ID in the response header, the access log and the WAF audit log: a customer can quote it.
+    modsecurity_transaction_id "$request_id";
+
+    add_header X-Request-ID $request_id always;
+    add_header X-Cache-Status $upstream_cache_status always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    # The origin servers only accept requests that carry the edge client certificate.
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Request-ID $request_id;
+    # The origin always answers uncompressed and the edge compresses for the client. Otherwise a gzip body
+    # cached for one client would be served to clients that never asked for gzip.
+    proxy_set_header Accept-Encoding "";
+    proxy_ssl_server_name on;
+    proxy_ssl_name {{ pki_origin_name }};
+    proxy_ssl_verify on;
+    proxy_ssl_verify_depth 2;
+    proxy_ssl_trusted_certificate {{ pki_remote_dir }}/ca.crt;
+    proxy_ssl_certificate     {{ pki_remote_dir }}/{{ pki_edge_client_cn }}.crt;
+    proxy_ssl_certificate_key {{ pki_remote_dir }}/{{ pki_edge_client_cn }}.key;
+    proxy_ssl_protocols TLSv1.3;
+    proxy_ssl_session_reuse on;
+    proxy_connect_timeout 3s;
+    proxy_read_timeout 15s;
+    proxy_next_upstream error timeout http_502 http_503;
+    # The origin's own copy of these headers would be duplicated by the add_header lines above.
+    proxy_hide_header Strict-Transport-Security;
+    proxy_hide_header X-Content-Type-Options;
+    proxy_hide_header X-Frame-Options;
+    proxy_hide_header Referrer-Policy;
+
+    location / {
+        proxy_pass https://origin;
+
+        # Cache what the origin marks as cacheable (Cache-Control), keyed on the full URL.
+        proxy_cache edge;
+        proxy_cache_key "$scheme$host$request_uri";
+        proxy_cache_bypass $edge_skip_cache;
+        proxy_no_cache $edge_skip_cache;
+        proxy_cache_lock on;
+        # Keep serving the last good copy if every origin fails.
+        proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+        proxy_cache_background_update on;
+    }
+
+    # Dynamic API: never cached.
+    location /api/ {
+        proxy_pass https://origin;
+        proxy_cache off;
+    }
+
+    # Credential stuffing and brute force: a few attempts per minute per IP, then 429.
+    location = /api/login {
+        limit_req zone=login burst={{ edge_login_burst }} nodelay;
+        limit_req_status 429;
+        proxy_pass https://origin;
+        proxy_cache off;
+    }
+
+    location = /healthz {
+        modsecurity off;
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+}

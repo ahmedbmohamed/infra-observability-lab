@@ -1,4 +1,6 @@
-"""The web servers: HTTPS with the internal CA, security headers, SSH hardening."""
+"""The web servers (origins): HTTPS with the internal CA, security headers, SSH hardening.
+
+Pages are only served to the edge (client certificate): see tests/test_edge.py for that part."""
 
 import socket
 import ssl
@@ -12,9 +14,8 @@ from conftest import CA_CERT, SSH_KEY, ssh
 
 def test_every_server_answers_over_https(nodes):
     for name, node in nodes.items():
-        r = requests.get(node["https_url"], verify=CA_CERT, timeout=10)
+        r = requests.get(node["https_url"] + "/healthz", verify=CA_CERT, timeout=10)
         assert r.status_code == 200, name
-        assert f"<h1>{name}</h1>" in r.text
 
 
 def test_health_endpoint(nodes):

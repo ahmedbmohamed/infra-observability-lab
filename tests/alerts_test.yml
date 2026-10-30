@@ -63,3 +63,55 @@ tests:
             exp_annotations:
               summary: "CPU above 85% on web1"
               description: "CPU usage on web1 has stayed above 85% for 5 minutes."
+
+  - name: Certificate expiry alerts at 21 and 7 days
+    interval: 1m
+    input_series:
+      # Expiry timestamps, in seconds since the start of the test (time() = 0 at the start).
+      - series: 'probe_ssl_earliest_cert_expiry{job="blackbox", instance="https://web1/healthz"}'
+        values: "1728000x20"  # 20 days
+      - series: 'probe_ssl_earliest_cert_expiry{job="blackbox", instance="https://edge/healthz"}'
+        values: "432000x20"  # 5 days
+      - series: 'probe_ssl_earliest_cert_expiry{job="blackbox", instance="https://web2/healthz"}'
+        values: "8640000x20"  # 100 days
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: CertificateExpiringSoon
+        exp_alerts:
+          - exp_labels: {severity: warning, job: blackbox, instance: "https://edge/healthz"}
+            exp_annotations:
+              summary: "Certificate of https://edge/healthz expires in 4.99 days"
+              description: "Renew it before it reaches 7 days (CertificateExpiryCritical)."
+              runbook: docs/runbooks/certificate-expiry.md
+          - exp_labels: {severity: warning, job: blackbox, instance: "https://web1/healthz"}
+            exp_annotations:
+              summary: "Certificate of https://web1/healthz expires in 19.99 days"
+              description: "Renew it before it reaches 7 days (CertificateExpiryCritical)."
+              runbook: docs/runbooks/certificate-expiry.md
+      - eval_time: 15m
+        alertname: CertificateExpiryCritical
+        exp_alerts:
+          - exp_labels: {severity: critical, job: blackbox, instance: "https://edge/healthz"}
+            exp_annotations:
+              summary: "Certificate of https://edge/healthz expires in 4.99 days"
+              description: "Clients will get TLS errors when it expires. Renew it now."
+              runbook: docs/runbooks/certificate-expiry.md
+
+  - name: WafAttackSpike above 30 blocked requests per minute
+    interval: 15s
+    input_series:
+      # 15 blocked requests every 15 s = 1 per second, then the attack stops.
+      - series: 'edge_waf_blocked_requests_total{job="edge", instance="edge", phase="request"}'
+        values: "0+15x12 180x12"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: WafAttackSpike
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: "The WAF blocks 1 requests per second"
+              description: "More than 30 blocked requests per minute: scan, attack campaign or a false positive after a release."
+              runbook: docs/runbooks/waf-attack-spike.md
+      - eval_time: 6m
+        alertname: WafAttackSpike
+        exp_alerts: []

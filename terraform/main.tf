@@ -8,6 +8,13 @@ locals {
     }
   }
 
+  # The edge (WAF + cache) sits in front of the web servers. Same server image, its own role in Ansible.
+  edge_node = {
+    ip         = cidrhost(var.network_cidr, 10)
+    ssh_port   = 2220
+    https_port = 8440
+  }
+
   node_image_dir = "${path.module}/../images/node"
   monitoring_dir = "${path.module}/../monitoring"
 }
@@ -64,6 +71,36 @@ resource "docker_container" "web" {
   }
 }
 
+# ---------- Edge: WAF, cache and rate limiting in front of the web servers ----------
+
+resource "docker_container" "edge" {
+  name     = "iol-edge"
+  hostname = "edge"
+  image    = docker_image.node.image_id
+  restart  = "unless-stopped"
+
+  env = ["AUTHORIZED_KEY=${trimspace(file(var.ssh_public_key_path))}"]
+
+  networks_advanced {
+    name         = docker_network.lab.name
+    ipv4_address = local.edge_node.ip
+    aliases      = ["edge"]
+  }
+
+  ports {
+    internal = 22
+    external = local.edge_node.ssh_port
+    ip       = "127.0.0.1"
+  }
+
+  # The only public entry point of the site.
+  ports {
+    internal = 443
+    external = local.edge_node.https_port
+    ip       = "127.0.0.1"
+  }
+}
+
 # ---------- Monitoring ----------
 
 resource "docker_image" "prometheus" {
@@ -84,7 +121,11 @@ resource "docker_container" "prometheus" {
   # The scrape targets come from web_nodes, so adding a server also adds it to monitoring.
   upload {
     file    = "/etc/prometheus/prometheus.yml"
-    content = templatefile("${path.module}/templates/prometheus.yml.tftpl", { nodes = keys(local.web_nodes) })
+    content = templatefile("${path.module}/templates/prometheus.yml.tftpl", {
+      nodes = concat(keys(local.web_nodes), ["edge"])
+      # Probed by blackbox_exporter on the edge: availability and certificate expiry.
+      probes = concat(["https://edge/healthz"], [for n in keys(local.web_nodes) : "https://${n}/healthz"])
+    })
   }
 
   upload {
@@ -140,6 +181,11 @@ resource "docker_container" "grafana" {
     content = file("${local.monitoring_dir}/grafana/lab-overview.json")
   }
 
+  upload {
+    file    = "/etc/grafana/dashboards/edge-security.json"
+    content = file("${local.monitoring_dir}/grafana/edge-security.json")
+  }
+
   networks_advanced {
     name    = docker_network.lab.name
     aliases = ["grafana"]
@@ -161,6 +207,7 @@ resource "local_file" "ansible_inventory" {
   file_permission = "0644"
   content = templatefile("${path.module}/templates/hosts.yml.tftpl", {
     nodes       = local.web_nodes
+    edge        = local.edge_node
     private_key = abspath(trimsuffix(var.ssh_public_key_path, ".pub"))
   })
 }

@@ -1,0 +1,7 @@
+; {{ ansible_managed }}
+[program:edge_exporter]
+command=/usr/bin/python3 /usr/local/bin/edge_exporter.py --access-log {{ edge_access_log }} --audit-log {{ edge_audit_log }} --port {{ edge_exporter_listen_port }}
+user=edge_exporter
+autorestart=true
+stdout_logfile=/var/log/supervisor/edge_exporter.log
+redirect_stderr=true

@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+# Status page for the Prometheus exporter, reachable from the server itself only.
+server {
+    listen 127.0.0.1:{{ nginx_status_port }};
+
+    location = /nginx_status {
+        stub_status;
+        allow 127.0.0.1;
+        deny all;
+    }
+}

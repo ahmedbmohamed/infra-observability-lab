@@ -1,0 +1,4 @@
+---
+- name: Restart blackbox_exporter
+  ansible.builtin.command: supervisorctl restart blackbox_exporter  # noqa: command-instead-of-module
+  changed_when: true

@@ -27,6 +27,9 @@ pipeline {
         stage('Alert drill') {
             steps { sh 'make drill' }
         }
+        stage('WAF drill') {
+            steps { sh 'make waf-drill' }
+        }
     }
 
     post {

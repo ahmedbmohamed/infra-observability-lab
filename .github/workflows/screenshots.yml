@@ -34,6 +34,9 @@ jobs:
       - name: Alert drill with screenshots
         run: python tests/alert_drill.py --screenshots docs/screenshots
 
+      - name: WAF drill with screenshots
+        run: python tests/waf_drill.py --screenshots docs/screenshots
+
       - name: Commit the screenshots
         run: |
           git config user.name "Ahmed Benmohamed"

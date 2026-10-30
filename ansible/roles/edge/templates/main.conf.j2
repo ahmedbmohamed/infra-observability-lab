@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+# Loaded by nginx with "modsecurity_rules_file". The order matters:
+# engine settings, CRS settings, exclusions that must run before the CRS, custom rules, the CRS, exclusions after it.
+Include /etc/nginx/modsec/modsecurity.conf
+Include /etc/nginx/modsec/crs-setup.conf
+Include /etc/nginx/modsec/exclusions-before-crs.conf
+Include /etc/nginx/modsec/custom-rules.conf
+Include {{ edge_crs_dir }}/rules/*.conf
+Include /etc/nginx/modsec/exclusions-after-crs.conf

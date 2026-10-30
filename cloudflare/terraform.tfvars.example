@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars (ignored by git) and set your zone. The API token goes in CLOUDFLARE_API_TOKEN.
+zone_id     = "0123456789abcdef0123456789abcdef"
+plan        = "free"
+blocked_ips = ["203.0.113.7"]

@@ -1,0 +1,6 @@
+# {{ ansible_managed }}
+# 1 when the client presented a valid certificate from the lab CA issued to the edge, 0 otherwise.
+map "$ssl_client_verify $ssl_client_s_dn" $origin_pull_ok {
+    "SUCCESS CN={{ pki_edge_client_cn }}" 1;
+    default 0;
+}

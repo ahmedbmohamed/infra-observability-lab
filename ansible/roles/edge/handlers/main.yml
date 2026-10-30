@@ -1,0 +1,4 @@
+---
+- name: Restart edge_exporter
+  ansible.builtin.command: supervisorctl restart edge_exporter  # noqa: command-instead-of-module
+  changed_when: true

@@ -1,0 +1,27 @@
+# {{ ansible_managed }}
+# Rule exclusions loaded BEFORE the CRS (runtime "ctl:" exclusions, scoped to one URL).
+# Each one fixes a false positive seen in tests/waf_corpus.py, with the smallest possible scope.
+#
+# Rule of thumb: remove ONE rule (or one rule family) for ONE parameter on ONE URL. Never turn a rule off
+# everywhere and never lower the paranoia level for the whole site because of one form field.
+
+# FP 1 - /api/login, password field: strong passwords contain ' ; -- & which look like SQL
+# (942540, 942180, 942440). A password is hashed, never placed in a SQL query, so the SQL injection rules
+# are removed for this field only. The username is still fully inspected.
+SecRule REQUEST_FILENAME "@streq /api/login" \
+    "id:10100,phase:1,pass,t:none,nolog,\
+    ctl:ruleRemoveTargetByTag=attack-sqli;ARGS:json.password"
+
+# FP 2 - /api/comments, text field: normal punctuation in reviews ("I'd buy it again; 5/5 -- Sam")
+# matches the RCE bypass rule 932200 and the SQL comment rule 942440 (both paranoia level 2).
+# Only these two rules are removed, only for this field. XSS, other RCE and SQLi rules still apply.
+SecRule REQUEST_FILENAME "@streq /api/comments" \
+    "id:10101,phase:1,pass,t:none,nolog,\
+    ctl:ruleRemoveTargetById=932200;ARGS:json.text,\
+    ctl:ruleRemoveTargetById=942440;ARGS:json.text"
+
+# FP 3 - /api/profile, website field: a link to the customer's own site is the purpose of the field,
+# but rule 931130 (paranoia level 2) treats any off-domain URL as remote file inclusion.
+SecRule REQUEST_FILENAME "@streq /api/profile" \
+    "id:10102,phase:1,pass,t:none,nolog,\
+    ctl:ruleRemoveTargetById=931130;ARGS:json.website"

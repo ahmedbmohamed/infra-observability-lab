@@ -1,5 +1,7 @@
 """Alert drill: stop nginx on one server, check that Prometheus raises NginxDown, then restore it.
 
+While the origin is down, the edge must keep serving the site from the other origins.
+
     python tests/alert_drill.py [--node web1] [--screenshots docs/screenshots]
 
 It measures the time from the outage to the alert, and from the repair to the alert clearing.
@@ -31,8 +33,12 @@ def supervisor(port: int, action: str) -> None:
         sys.exit(f"supervisorctl {action} failed: {r.stderr}")
 
 
-def screenshots(out: Path, grafana: str, password: str, prometheus: str, shots: list[str]) -> None:
-    """Shots: "alerts" (Prometheus firing alerts) and/or a dashboard file name such as "grafana-dashboard"."""
+def screenshots(
+    out: Path, grafana: str, password: str, prometheus: str, shots: list[str], alert: str = "NginxDown"
+) -> None:
+    """Shots: "alerts" (Prometheus firing alerts) and/or a dashboard file name such as "grafana-dashboard".
+
+    File names starting with "edge-" show the Edge security dashboard, the others the overview."""
     from playwright.sync_api import sync_playwright
 
     out.mkdir(parents=True, exist_ok=True)
@@ -45,9 +51,10 @@ def screenshots(out: Path, grafana: str, password: str, prometheus: str, shots: 
                 page.goto(f"{prometheus}/alerts?state=firing")
                 page.wait_for_timeout(2000)
                 page.get_by_text("Show annotations").click()
-                page.get_by_text("NginxDown").first.click()
+                page.get_by_text(alert).first.click()
                 page.wait_for_timeout(1000)
-                page.screenshot(path=out / "prometheus-alert-firing.png", full_page=True)
+                name = "prometheus-alert-firing" if alert == "NginxDown" else f"prometheus-{alert.lower()}"
+                page.screenshot(path=out / f"{name}.png", full_page=True)
                 continue
             if not logged_in:
                 logged_in = True
@@ -56,7 +63,8 @@ def screenshots(out: Path, grafana: str, password: str, prometheus: str, shots: 
                 page.fill('input[name="password"]', password)
                 page.click('button[type="submit"]')
                 page.wait_for_load_state("networkidle")
-            page.goto(f"{grafana}/d/iol-overview?orgId=1&from=now-5m&to=now&kiosk")
+            uid = "iol-edge" if shot.startswith("edge-") else "iol-overview"
+            page.goto(f"{grafana}/d/{uid}?orgId=1&from=now-5m&to=now&kiosk")
             page.wait_for_timeout(8000)
             page.screenshot(path=out / f"{shot}.png", full_page=True)
         browser.close()
@@ -88,7 +96,9 @@ def main() -> None:
 
     stop_traffic = threading.Event()
     threading.Thread(
-        target=traffic, args=([n["https_url"] for n in out["web_nodes"].values()], stop_traffic), daemon=True
+        target=traffic,
+        args=([out["edge"]["https_url"]] + [n["https_url"] for n in out["web_nodes"].values()], stop_traffic),
+        daemon=True,
     ).start()
     shoot = None
     if args.screenshots:
@@ -102,7 +112,16 @@ def main() -> None:
         requests.get(node["https_url"], verify=CA_CERT, timeout=5)
         sys.exit("the site still answers after nginx was stopped")
     except requests.exceptions.ConnectionError:
-        print("[drill] the site is down, as expected")
+        print("[drill] the origin is down, as expected")
+
+    others = set(out["web_nodes"]) - {args.node}
+    if others:
+        api = out["edge"]["https_url"] + "/api/server-info"
+        served = [requests.get(api, verify=CA_CERT, timeout=10) for _ in range(6)]
+        if any(r.status_code != 200 for r in served) or {r.json()["server"] for r in served} != others:
+            supervisor(node["ssh_port"], "start")
+            sys.exit(f"the edge did not fail over: {[(r.status_code, r.text[:60]) for r in served]}")
+        print(f"[drill] the edge still serves the site from {', '.join(sorted(others))}")
 
     if not wait_for(lambda: nginx_alert(prometheus, args.node) == "firing", timeout=150, every=2):
         supervisor(node["ssh_port"], "start")
@@ -125,8 +144,11 @@ def main() -> None:
         print(f"[drill] screenshots saved in {args.screenshots}")
     stop_traffic.set()
 
-    r = requests.get(node["https_url"], verify=CA_CERT, timeout=10)
-    assert r.status_code == 200
+    api = out["edge"]["https_url"] + "/api/server-info"
+    back = wait_for(lambda: requests.get(api, verify=CA_CERT, timeout=10).json()["server"] == args.node, timeout=60, every=1)
+    if not back:
+        sys.exit(f"the edge does not send traffic to {args.node} again")
+    print(f"[drill] the edge sends traffic to {args.node} again")
     print("[drill] passed")
 
 

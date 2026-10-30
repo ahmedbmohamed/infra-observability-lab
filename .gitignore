@@ -13,3 +13,9 @@ ansible/inventory/hosts.yml
 
 __pycache__/
 .pytest_cache/
+.cache/
+reports/
+cloudflare/.terraform/
+cloudflare/*.tfstate*
+cloudflare/.terraform.lock.hcl
+cloudflare/terraform.tfvars

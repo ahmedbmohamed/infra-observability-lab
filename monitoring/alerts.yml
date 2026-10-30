@@ -58,3 +58,56 @@ groups:
         annotations:
           summary: "No requests on {{ $labels.instance }} for 15 minutes"
           description: "nginx is up on {{ $labels.instance }} but received no requests (load balancer or DNS problem?)."
+
+  - name: edge
+    rules:
+      - alert: EndpointProbeFailed
+        expr: probe_success == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} fails its HTTPS probe"
+          description: "blackbox_exporter cannot get a valid HTTPS answer from {{ $labels.instance }} (down, wrong status or certificate not trusted)."
+          runbook: docs/runbooks/certificate-expiry.md
+
+      - alert: CertificateExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 21
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Certificate of {{ $labels.instance }} expires in {{ $value | humanize }} days"
+          description: "Renew it before it reaches 7 days (CertificateExpiryCritical)."
+          runbook: docs/runbooks/certificate-expiry.md
+
+      - alert: CertificateExpiryCritical
+        expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 7
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Certificate of {{ $labels.instance }} expires in {{ $value | humanize }} days"
+          description: "Clients will get TLS errors when it expires. Renew it now."
+          runbook: docs/runbooks/certificate-expiry.md
+
+      - alert: WafAttackSpike
+        expr: sum(rate(edge_waf_blocked_requests_total[1m])) > 0.5
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "The WAF blocks {{ $value | humanize }} requests per second"
+          description: "More than 30 blocked requests per minute: scan, attack campaign or a false positive after a release."
+          runbook: docs/runbooks/waf-attack-spike.md
+
+      - alert: EdgeHighErrorRate
+        expr: >-
+          sum(rate(edge_http_requests_total{status_class="5xx"}[5m]))
+          / sum(rate(edge_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of edge responses are 5xx errors"
+          description: "The origins fail or are unreachable from the edge (check the origin certificates and the upstream logs)."

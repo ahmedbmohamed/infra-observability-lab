@@ -1,0 +1,90 @@
+---
+# Runs after the nginx role (nginx_lab_site: false): nginx, the status page and its exporter are already there.
+
+- name: Install the ModSecurity module for nginx
+  ansible.builtin.apt:
+    name: libnginx-mod-http-modsecurity
+    state: present
+    # The recommended package is the old CRS 3.3 from Ubuntu: the pinned CRS 4 below is used instead.
+    install_recommends: false
+
+- name: Download the OWASP Core Rule Set (checksum verified)
+  ansible.builtin.get_url:
+    url: "{{ edge_crs_url }}"
+    dest: "/opt/coreruleset-{{ edge_crs_version }}.tar.gz"
+    checksum: "sha256:{{ edge_crs_sha256 }}"
+    mode: "0644"
+
+- name: Unpack the Core Rule Set
+  ansible.builtin.unarchive:
+    src: "/opt/coreruleset-{{ edge_crs_version }}.tar.gz"
+    dest: /opt
+    remote_src: true
+    owner: root
+    group: root
+    creates: "{{ edge_crs_dir }}/rules/REQUEST-949-BLOCKING-EVALUATION.conf"
+  notify: Reload nginx
+
+- name: Create the WAF and cache folders
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: /etc/nginx/modsec, owner: root, group: root, mode: "0755"}
+    - {path: "{{ edge_audit_log | dirname }}", owner: www-data, group: adm, mode: "0750"}
+    - {path: "{{ edge_cache_dir }}", owner: www-data, group: www-data, mode: "0700"}
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Configure ModSecurity and the Core Rule Set
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/nginx/modsec/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - main.conf
+    - modsecurity.conf
+    - crs-setup.conf
+    - exclusions-before-crs.conf
+    - custom-rules.conf
+    - exclusions-after-crs.conf
+  notify: Reload nginx
+
+- name: Write the IP deny list
+  ansible.builtin.copy:
+    dest: /etc/nginx/modsec/ip-denylist.txt
+    # ModSecurity refuses an empty file: 192.0.2.0/24 is a documentation range, never a real client.
+    content: "{{ (['192.0.2.0/24'] + edge_ip_denylist) | join('\n') }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Configure the edge site
+  ansible.builtin.template:
+    src: edge-site.conf.j2
+    dest: /etc/nginx/sites-available/edge.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable the edge site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/edge.conf
+    dest: /etc/nginx/sites-enabled/edge.conf
+    state: link
+  notify: Reload nginx
+
+# Same safety net as in the nginx role: never reload a broken configuration.
+- name: Check the nginx configuration with the WAF loaded
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Install the edge metrics exporter
+  ansible.builtin.import_tasks: exporter.yml

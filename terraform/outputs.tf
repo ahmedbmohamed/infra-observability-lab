@@ -8,6 +8,14 @@ output "web_nodes" {
   }
 }
 
+output "edge" {
+  description = "Public HTTPS URL of the site (through the WAF) and SSH port of the edge."
+  value = {
+    https_url = "https://localhost:${local.edge_node.https_port}"
+    ssh_port  = local.edge_node.ssh_port
+  }
+}
+
 output "prometheus_url" {
   value = "http://localhost:9090"
 }

@@ -9,6 +9,12 @@ all:
           ansible_port: ${node.ssh_port}
           lab_ip: ${node.ip}
 %{ endfor ~}
+    edge:
+      hosts:
+        edge:
+          ansible_host: 127.0.0.1
+          ansible_port: ${edge.ssh_port}
+          lab_ip: ${edge.ip}
   vars:
     ansible_user: ops
     ansible_ssh_private_key_file: ${private_key}

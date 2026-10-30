@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+modules:
+  # HTTPS probe that trusts only the lab CA: an unknown or expired certificate makes the probe fail.
+  https_lab:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      valid_status_codes: [200]
+      fail_if_not_ssl: true
+      preferred_ip_protocol: ip4
+      tls_config:
+        ca_file: {{ blackbox_exporter_dir }}/ca.crt
+        min_version: TLS12

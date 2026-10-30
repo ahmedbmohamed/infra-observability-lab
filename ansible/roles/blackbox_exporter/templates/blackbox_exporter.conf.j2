@@ -1,0 +1,7 @@
+; {{ ansible_managed }}
+[program:blackbox_exporter]
+command=/usr/local/bin/blackbox_exporter --config.file={{ blackbox_exporter_dir }}/blackbox.yml --web.listen-address={{ blackbox_exporter_listen }}
+user=blackbox_exporter
+autorestart=true
+stdout_logfile=/var/log/supervisor/blackbox_exporter.log
+redirect_stderr=true

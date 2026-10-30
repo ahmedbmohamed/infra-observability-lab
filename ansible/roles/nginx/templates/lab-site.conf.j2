@@ -24,27 +24,49 @@ server {
     add_header Referrer-Policy "no-referrer" always;
     add_header Content-Security-Policy "default-src 'self'" always;
 
+{% if groups['edge'] | default([]) %}
+    # Authenticated origin pull: the edge presents a client certificate signed by the lab CA.
+    # Requests without it (someone bypassing the WAF) get 403. The check runs in each location below.
+    ssl_client_certificate {{ pki_remote_dir }}/ca.crt;
+    ssl_verify_client optional;
+    ssl_verify_depth 2;
+
+    # Log the real client IP sent by the edge, not the edge's own address.
+{% for edge in groups['edge'] %}
+    set_real_ip_from {{ hostvars[edge]['lab_ip'] }};
+{% endfor %}
+    real_ip_header X-Forwarded-For;
+{% endif %}
+
     root {{ nginx_site_root }};
     index index.html;
 
     location / {
+{% if groups['edge'] | default([]) %}
+        if ($origin_pull_ok = 0) {
+            return 403 "Direct access to the origin is not allowed.\n";
+        }
+{% endif %}
+        # The edge may cache pages and static files for one minute.
+        expires 60s;
         try_files $uri $uri/ =404;
+    }
+
+    # A tiny JSON API, enough to exercise the WAF, the cache rules and the rate limit.
+    location /api/ {
+{% if groups['edge'] | default([]) %}
+        if ($origin_pull_ok = 0) {
+            return 403 "Direct access to the origin is not allowed.\n";
+        }
+{% endif %}
+        expires epoch;
+        default_type application/json;
+        return 200 '{"server":"{{ inventory_hostname }}","path":"$uri"}\n';
     }
 
     location = /healthz {
         access_log off;
         default_type text/plain;
         return 200 "ok\n";
-    }
-}
-
-# Status page for the Prometheus exporter, reachable from the server itself only.
-server {
-    listen 127.0.0.1:{{ nginx_status_port }};
-
-    location = /nginx_status {
-        stub_status;
-        allow 127.0.0.1;
-        deny all;
     }
 }

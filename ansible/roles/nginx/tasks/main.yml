@@ -19,37 +19,65 @@
     mode: "0644"
   notify: Reload nginx
 
-- name: Configure the HTTPS site
+- name: Publish the status page for the exporter
   ansible.builtin.template:
-    src: lab-site.conf.j2
-    dest: /etc/nginx/sites-available/lab.conf
+    src: status.conf.j2
+    dest: /etc/nginx/conf.d/status.conf
     owner: root
     group: root
     mode: "0644"
   notify: Reload nginx
 
-- name: Enable the HTTPS site
-  ansible.builtin.file:
-    src: /etc/nginx/sites-available/lab.conf
-    dest: /etc/nginx/sites-enabled/lab.conf
-    state: link
-  notify: Reload nginx
+# On the edge, the edge role installs its own site instead (nginx_lab_site: false).
+- name: Configure the origin site
+  when: nginx_lab_site
+  block:
+    - name: Map the edge client certificate to $origin_pull_ok
+      ansible.builtin.template:
+        src: origin-pull.conf.j2
+        dest: /etc/nginx/conf.d/origin-pull.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload nginx
 
-- name: Create the site folder
-  ansible.builtin.file:
-    path: "{{ nginx_site_root }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
+    - name: Configure the HTTPS site
+      ansible.builtin.template:
+        src: lab-site.conf.j2
+        dest: /etc/nginx/sites-available/lab.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload nginx
 
-- name: Publish the home page
-  ansible.builtin.template:
-    src: index.html.j2
-    dest: "{{ nginx_site_root }}/index.html"
-    owner: root
-    group: root
-    mode: "0644"
+    - name: Enable the HTTPS site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/lab.conf
+        dest: /etc/nginx/sites-enabled/lab.conf
+        state: link
+      notify: Reload nginx
+
+    - name: Create the site folders
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - "{{ nginx_site_root }}"
+        - "{{ nginx_site_root }}/static"
+
+    - name: Publish the home page and the stylesheet
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ nginx_site_root }}/{{ item.dest }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - {src: index.html.j2, dest: index.html}
+        - {src: app.css.j2, dest: static/app.css}
 
 # Stops the play here if a template produced an invalid configuration,
 # before the reload handler can break a running server.

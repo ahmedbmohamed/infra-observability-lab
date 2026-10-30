@@ -5,3 +5,7 @@ pki_ca_common_name: Infra Lab Internal CA
 pki_ca_days: 3650
 pki_cert_days: 397
 pki_remote_dir: /etc/ssl/lab
+# Name shared by every origin server: the edge checks it in the origin certificates.
+pki_origin_name: origin.lab
+# Client certificate the edge presents to the origins (authenticated origin pull).
+pki_edge_client_cn: edge-origin-pull
