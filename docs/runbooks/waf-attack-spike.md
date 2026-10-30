@@ -53,7 +53,19 @@ It lists every rule that matched, with the matched value.
 4. If the fix cannot wait for a change review: switch that one URL to detection only with a
    `ctl:ruleEngine=DetectionOnly` rule, never the whole site.
 
-## 3. Close
+## 3. Weekly: what would a higher paranoia level block?
+
+The level 2 rules run in detection only. Their matches are in the audit log with a 200 answer:
+
+```bash
+ssh -p 2220 -i .secrets/id_ed25519 ops@127.0.0.1 sudo cat /var/log/modsec/audit.json \
+  | python3 tools/waf_report.py --detection-only
+```
+
+Real attacks in this list are what level 2 would add. Legitimate requests in it are the false positives to
+tune (step 2b) before raising `edge_paranoia_level` for that site or URL.
+
+## 4. Close
 
 The alert clears about one minute after the blocks stop. Check the dashboard, and add what you
 learned to this runbook.

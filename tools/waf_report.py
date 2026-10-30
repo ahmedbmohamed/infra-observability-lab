@@ -2,6 +2,8 @@
 
     ssh -p 2220 -i .secrets/id_ed25519 ops@127.0.0.1 sudo cat /var/log/modsec/audit.json | python3 tools/waf_report.py
     python3 tools/waf_report.py audit.json --request-id 3f8760...   # one request, every rule that matched
+    python3 tools/waf_report.py audit.json --detection-only          # allowed requests that matched rules
+                                                                     # (paranoia level 2 in detection mode)
 
 First thing to run during an incident (docs/runbooks/waf-attack-spike.md): it tells an attack campaign
 (many IPs or payloads, one target) from a false positive (one rule, one URL, normal-looking clients).
@@ -49,12 +51,19 @@ def main() -> int:
     parser.add_argument("file", nargs="?", help="audit log (default: standard input)")
     parser.add_argument("--request-id")
     parser.add_argument("--top", type=int, default=10)
+    parser.add_argument("--detection-only", action="store_true",
+                        help="requests that were allowed but matched rules: what a higher paranoia level would block")
     args = parser.parse_args()
 
     stream = open(args.file, encoding="utf-8") if args.file else sys.stdin
-    transactions = [tx for tx in load(stream) if tx.get("response", {}).get("http_code") in (403, 415)]
+    everything = list(load(stream))
     if args.request_id:
-        return show_request(transactions, args.request_id)
+        return show_request(everything, args.request_id)
+    if args.detection_only:
+        transactions = [tx for tx in everything if (tx.get("response", {}).get("http_code") or 0) < 400
+                        and any(True for _ in detections(tx))]
+    else:
+        transactions = [tx for tx in everything if tx.get("response", {}).get("http_code") in (403, 415)]
 
     rules, ips, uris, attacks = Counter(), Counter(), Counter(), Counter()
     messages = {}
@@ -69,7 +78,8 @@ def main() -> int:
         for a in seen_attacks or {"other"}:
             attacks[a] += 1
 
-    print(f"Blocked requests: {len(transactions)}   distinct client IPs: {len(ips)}   distinct paths: {len(uris)}\n")
+    kind = "Allowed requests with detections" if args.detection_only else "Blocked requests"
+    print(f"{kind}: {len(transactions)}   distinct client IPs: {len(ips)}   distinct paths: {len(uris)}\n")
     for title, counter, label in (
         ("Attack types", attacks, lambda k: k),
         ("Rules", rules, lambda k: f"{k}  {messages[k][:70]}"),

@@ -67,7 +67,16 @@ flowchart LR
 
 ## Screenshots
 
-Taken by the CI during the alert drill ([`refresh-screenshots`](.github/workflows/screenshots.yml) workflow).
+Taken by the CI during the drills ([`refresh-screenshots`](.github/workflows/screenshots.yml) workflow).
+
+**Attack drill:** the *Edge security* dashboard while about 2 attacks per second are blocked (by CRS attack
+type), with the HTTPS probes, the certificate lifetimes and the cache hit ratio.
+
+![Edge security dashboard during the attack drill](docs/screenshots/edge-dashboard-attack.png)
+
+**Prometheus:** `WafAttackSpike` firing, with its runbook.
+
+![WafAttackSpike firing](docs/screenshots/prometheus-wafattackspike.png)
 
 **nginx stopped on web1:** the dashboard shows web1 DOWN and one firing alert.
 

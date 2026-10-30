@@ -11,7 +11,7 @@ needs a real domain on Cloudflare and an API token.
 
 | Lab (this repository) | Cloudflare | Here |
 |---|---|---|
-| OWASP CRS 4 in ModSecurity, paranoia level 2 | Cloudflare OWASP Core Ruleset + Cloudflare Managed Ruleset (Pro+). Free plan: Free Managed Ruleset, automatic | `cloudflare_ruleset.managed_waf` |
+| OWASP CRS 4 in ModSecurity, blocking at paranoia level 1, level 2 in detection | Cloudflare OWASP Core Ruleset + Cloudflare Managed Ruleset (Pro+). Free plan: Free Managed Ruleset, automatic | `cloudflare_ruleset.managed_waf` |
 | `custom-rules.conf.j2`: IP deny list, virtual patch, JSON-only API writes | WAF custom rules | `cloudflare_ruleset.custom_rules` |
 | `exclusions-before-crs.conf.j2`: one rule, one field, one URL | Managed rule exceptions (skip rule) / overrides | not needed on Free |
 | `limit_req` on `/api/login` → 429 | Rate limiting rule | `cloudflare_ruleset.rate_limit` |
